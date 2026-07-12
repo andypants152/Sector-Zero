@@ -15,6 +15,7 @@ struct VertexOut {
 
 struct CRTUniforms {
     float2 viewportSize;
+    float2 frameBufferSize;
     float time;
 };
 
@@ -32,27 +33,27 @@ vertex VertexOut crtVertex(uint vertexID [[vertex_id]]) {
 }
 
 fragment float4 crtFragment(VertexOut in [[stage_in]],
-                            constant CRTUniforms &uniforms [[buffer(0)]]) {
+                            constant CRTUniforms &uniforms [[buffer(0)]],
+                            texture2d<float> frameTexture [[texture(0)]]) {
+    constexpr sampler frameSampler(address::clamp_to_edge, filter::nearest);
+
     float2 uv = float2(in.uv.x, 1.0 - in.uv.y);
     float2 pixel = uv * uniforms.viewportSize;
+    float3 frameColor = frameTexture.sample(frameSampler, uv).rgb;
 
-    float3 baseColor = float3(0.004, 0.009, 0.006);
-    float scanline = 0.72 + 0.28 * sin(pixel.y * 3.14159265);
+    float luminance = max(max(frameColor.r, frameColor.g), frameColor.b);
+    float scanline = 0.70 + 0.30 * sin(pixel.y * 3.14159265);
 
     float2 centered = uv - 0.5;
-    float vignette = smoothstep(0.86, 0.22, length(centered * float2(1.05, 1.35)));
+    float vignette = smoothstep(0.80, 0.24, length(centered * float2(1.02, 1.34)));
 
-    float glow = exp(-length((uv - float2(0.18, 0.16)) * float2(5.0, 3.4))) * 0.07;
-    float3 phosphor = float3(0.05, 0.55, 0.28) * glow;
+    float edgeDistance = max(abs(centered.x) / 0.5, abs(centered.y) / 0.5);
+    float cornerMask = smoothstep(1.02, 0.96, edgeDistance);
 
-    float2 cursorOrigin = float2(38.0, 36.0);
-    float2 cursorSize = float2(12.0, 18.0);
-    float2 cursorMax = cursorOrigin + cursorSize;
-    bool insideCursor = pixel.x >= cursorOrigin.x && pixel.x <= cursorMax.x &&
-                        pixel.y >= cursorOrigin.y && pixel.y <= cursorMax.y;
-    float cursorBlink = smoothstep(0.34, 0.64, 0.5 + 0.5 * sin(uniforms.time * 5.2));
-    float3 cursorColor = insideCursor ? float3(0.16, 0.95, 0.48) * cursorBlink : float3(0.0);
+    float phosphorBloom = 0.055 * luminance;
+    float3 phosphor = frameColor * (1.0 + phosphorBloom) + float3(0.03, 0.22, 0.08) * phosphorBloom;
+    float3 idleGlow = float3(0.004, 0.010, 0.006);
 
-    float3 color = (baseColor + phosphor + cursorColor) * scanline * vignette;
+    float3 color = (idleGlow + phosphor) * scanline * vignette * cornerMask;
     return float4(color, 1.0);
 }
