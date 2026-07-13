@@ -26,7 +26,7 @@ struct ProjectBrowserView: View {
         .frame(width: isCompact ? nil : 286, alignment: .topLeading)
         .frame(maxWidth: isCompact ? .infinity : nil, alignment: .topLeading)
         .frame(maxHeight: isCompact ? nil : .infinity, alignment: .topLeading)
-        .background(Color.projectSidebar)
+        .background(Color.sectorSidebar)
         .sheet(isPresented: $isShowingNewProject) {
             NewProjectSheet(workspace: workspace)
         }
@@ -42,12 +42,12 @@ struct ProjectBrowserView: View {
     private var title: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("PROJECTS")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.sectorMono(12, weight: .semibold))
                 .tracking(1.8)
-                .foregroundStyle(Color.projectMutedText)
+                .foregroundStyle(Color.sectorMutedText)
             Text("Sector Zero")
                 .font(.system(size: 22, weight: .semibold, design: .default))
-                .foregroundStyle(Color.projectText)
+                .foregroundStyle(Color.sectorText)
         }
     }
 
@@ -75,24 +75,24 @@ struct ProjectBrowserView: View {
     private var currentProjectSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CURRENT PROJECT")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.sectorMono(11, weight: .semibold))
                 .tracking(1.2)
-                .foregroundStyle(Color.projectMutedText)
+                .foregroundStyle(Color.sectorMutedText)
 
             if let project = workspace.currentProject {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(project.projectName)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.projectText)
+                        .foregroundStyle(Color.sectorText)
                     Text(project.projectURL.deletingLastPathComponent().path)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color.projectMutedText)
+                        .font(.sectorMono(11, weight: .regular))
+                        .foregroundStyle(Color.sectorMutedText)
                         .lineLimit(2)
                 }
             } else {
                 Text("No project open")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.projectMutedText)
+                    .foregroundStyle(Color.sectorMutedText)
             }
         }
         .padding(.top, 4)
@@ -101,14 +101,14 @@ struct ProjectBrowserView: View {
     private var recentProjects: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("RECENT")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.sectorMono(11, weight: .semibold))
                 .tracking(1.2)
-                .foregroundStyle(Color.projectMutedText)
+                .foregroundStyle(Color.sectorMutedText)
 
             if workspace.recentProjects.isEmpty {
                 Text("Recently opened projects will appear here.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.projectMutedText)
+                    .foregroundStyle(Color.sectorMutedText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 6) {
@@ -119,10 +119,10 @@ struct ProjectBrowserView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(project.projectName)
                                     .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(Color.projectText)
+                                    .foregroundStyle(Color.sectorText)
                                 Text(project.projectURL.deletingLastPathComponent().path)
-                                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                                    .foregroundStyle(Color.projectMutedText)
+                                    .font(.sectorMono(10, weight: .regular))
+                                    .foregroundStyle(Color.sectorMutedText)
                                     .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,12 +172,6 @@ struct ProjectBrowserView: View {
             workspace.errorMessage = error.localizedDescription
         }
     }
-}
-
-private extension Color {
-    static let projectSidebar = Color(red: 0.024, green: 0.028, blue: 0.026)
-    static let projectText = Color(red: 0.74, green: 0.84, blue: 0.76)
-    static let projectMutedText = Color(red: 0.42, green: 0.52, blue: 0.45)
 }
 
 #Preview {

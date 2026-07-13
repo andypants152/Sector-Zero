@@ -34,7 +34,7 @@ struct SectorZeroWorkspaceView: View {
         HStack(spacing: 0) {
             ProjectBrowserView(workspace: workspace)
             Divider()
-                .overlay(Color.sectorScreenBorder)
+                .overlay(Color.sectorBorder)
             workspaceContent
         }
     }
@@ -43,7 +43,7 @@ struct SectorZeroWorkspaceView: View {
         VStack(spacing: 0) {
             ProjectBrowserView(workspace: workspace, isCompact: true)
             Divider()
-                .overlay(Color.sectorScreenBorder)
+                .overlay(Color.sectorBorder)
             workspaceContent
         }
     }
@@ -62,7 +62,7 @@ struct SectorZeroWorkspaceView: View {
     private var header: some View {
         HStack {
             Text(workspace.currentProject?.projectName.uppercased() ?? "SECTOR ZERO")
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .font(.sectorMono(13, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Color.sectorText)
             Spacer(minLength: 0)
@@ -75,14 +75,14 @@ struct SectorZeroWorkspaceView: View {
             workspace.step()
         } label: {
             Text("STEP")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.sectorMono(11, weight: .semibold))
                 .tracking(1.5)
                 .foregroundStyle(Color.sectorText)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.sectorScreenBorder, lineWidth: 1)
+                        .stroke(Color.sectorBorder, lineWidth: 1)
                 }
         }
         .buttonStyle(.plain)
@@ -94,7 +94,7 @@ struct SectorZeroWorkspaceView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.sectorScreenBorder, lineWidth: 1)
+                    .stroke(Color.sectorBorder, lineWidth: 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .aspectRatio(4.0 / 3.0, contentMode: .fit)
@@ -120,7 +120,7 @@ struct SectorZeroWorkspaceView: View {
     private var footer: some View {
         HStack {
             Text(workspace.statusText)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.sectorMono(11))
                 .tracking(1.4)
                 .foregroundStyle(Color.sectorMutedText)
             Spacer(minLength: 0)
@@ -140,13 +140,6 @@ struct SectorZeroWorkspaceView: View {
     private var isCompact: Bool {
         horizontalSizeClass == .compact
     }
-}
-
-private extension Color {
-    static let sectorWorkspace = Color(red: 0.015, green: 0.017, blue: 0.016)
-    static let sectorText = Color(red: 0.70, green: 0.82, blue: 0.72)
-    static let sectorMutedText = Color(red: 0.34, green: 0.46, blue: 0.38)
-    static let sectorScreenBorder = Color(red: 0.10, green: 0.18, blue: 0.13)
 }
 
 #Preview {
