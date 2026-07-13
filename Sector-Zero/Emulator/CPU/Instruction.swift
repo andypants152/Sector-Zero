@@ -86,6 +86,10 @@ enum Instruction: Equatable {
     case returnNearAdjust(UInt16)
     case returnFar
     case returnFarAdjust(UInt16)
+    case breakpointInterrupt
+    case softwareInterrupt(UInt8)
+    case interruptOnOverflow
+    case interruptReturn
     case jumpConditional(condition: JumpCondition, displacement: Int8)
     case jumpShort(displacement: Int8)
     case jumpNear(displacement: Int16)

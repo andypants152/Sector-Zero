@@ -138,6 +138,14 @@ struct InstructionDecoder {
             return .returnNear
         case 0xCB:
             return .returnFar
+        case 0xCC:
+            return .breakpointInterrupt
+        case 0xCD:
+            return .softwareInterrupt(nextByte())
+        case 0xCE:
+            return .interruptOnOverflow
+        case 0xCF:
+            return .interruptReturn
         case 0x9A:
             // CALL far (direct intersegment): little-endian offset then segment.
             let offsetLow = nextByte()

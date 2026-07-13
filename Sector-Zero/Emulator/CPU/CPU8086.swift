@@ -504,6 +504,23 @@ final class CPU8086 {
             cs = pop16()
             registers[.sp] = registers[.sp] &+ adjustment
             return 25
+        case .breakpointInterrupt:
+            enterInterrupt(3)
+            return 52
+        case .softwareInterrupt(let type):
+            enterInterrupt(type)
+            return 51
+        case .interruptOnOverflow:
+            guard flags[.overflow] else { return 4 }
+            enterInterrupt(4)
+            return 53
+        case .interruptReturn:
+            // The interrupt frame's top is IP, followed by CS and FLAGS.
+            // Reconstructing CPUFlags normalizes its hard-wired reserved bits.
+            ip = pop16()
+            cs = pop16()
+            flags = CPUFlags(rawValue: pop16())
+            return 24
         case .jumpConditional(let condition, let displacement):
             // IP already points past the displacement byte; a taken branch
             // adds the sign-extended offset with 16-bit wrap.
@@ -598,6 +615,21 @@ final class CPU8086 {
         let value = readMemoryWord(at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
         registers[.sp] = registers[.sp] &+ 2
         return value
+    }
+
+    /// Enters a real-mode interrupt through the physical interrupt vector
+    /// table at address zero. FLAGS is captured before TF/IF are cleared, then
+    /// CS and the already-advanced return IP complete the stack frame.
+    private func enterInterrupt(_ type: UInt8) {
+        push16(flags.rawValue)
+        flags[.trap] = false
+        flags[.interruptEnable] = false
+        push16(cs)
+        push16(ip)
+
+        let vectorAddress = UInt32(type) * 4
+        ip = bus.readWord(at: vectorAddress)
+        cs = bus.readWord(at: vectorAddress + 2)
     }
 
     /// Advances an implicit string index by the operand width, or retreats it

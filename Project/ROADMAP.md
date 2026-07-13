@@ -11,14 +11,15 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M33 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M34 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
-MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE). The next milestone is M34 below.
+MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET). The
+next milestone is M35 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment and
@@ -55,6 +56,9 @@ code address. Physical addressing lives in
 `AddressTranslator.physicalAddress(segment:offset:)`. Decoding is pure
 (`InstructionDecoder` + `ModRMDecoder`, pulling operand bytes through a `nextByte`
 closure); arithmetic is pure (`ALU` returning `(result, ArithmeticFlags)`).
+Software interrupt instructions share `CPU8086.enterInterrupt`, which builds the
+real-mode FLAGS/CS/IP frame and reads CS:IP from the physical IVT; M35 can reuse
+that path for CPU-generated and external events.
 
 **Established policies:**
 - **Unknown opcodes:** no-op-and-advance at a provisional 3 clocks (never wedges;
@@ -428,7 +432,7 @@ matrix introduced in M39 is the CPU-completion gate.
   address wrap, mixed/repeated prefixes with last-one-wins, segment override
   composition, and cycle totals.
 
-### M34 — Software interrupts and IRET (0xCC–0xCF)
+### M34 — Software interrupts and IRET (0xCC–0xCF) ✅
 - **Goal:** Establish one reusable real-mode interrupt-entry mechanism.
 - **Build:** INT3, INT imm8, INTO, and IRET. Interrupt entry reads the vector
   from physical `0000:(type×4)`, pushes FLAGS then CS then return IP, clears
