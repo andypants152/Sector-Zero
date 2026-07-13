@@ -10,7 +10,9 @@ struct PCMemoryMapTests {
 
         #expect(snapshot.memoryRegions == [
             MemoryRegionSnapshot(name: "Conventional RAM", range: 0x00000...0x9FFFF, kind: .ram),
-            MemoryRegionSnapshot(name: "Adapter Space", range: 0xA0000...0xEFFFF, kind: .reserved),
+            MemoryRegionSnapshot(name: "Adapter Space (Low)", range: 0xA0000...0xB7FFF, kind: .reserved),
+            MemoryRegionSnapshot(name: "CGA Text VRAM", range: 0xB8000...0xBBFFF, kind: .device),
+            MemoryRegionSnapshot(name: "Adapter Space (High)", range: 0xBC000...0xEFFFF, kind: .reserved),
             MemoryRegionSnapshot(name: "System ROM", range: 0xF0000...0xFFFFF, kind: .rom),
         ])
         #expect(snapshot.loadedSystemROMByteCount == 0)

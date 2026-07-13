@@ -108,7 +108,7 @@ struct SectorZeroWorkspaceView: View {
     }
 
     private var display: some View {
-        CRTMetalView()
+        CRTMetalView(video: workspace.machineSnapshot.video)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

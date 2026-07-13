@@ -46,7 +46,7 @@ final class Machine {
         self.bus = EmulatorBus(memory: memory)
         self.cpu = CPU8086(bus: bus)
         self.clock = ExecutionClock()
-        self.clockedDevices = [bus.intervalTimer]
+        self.clockedDevices = [bus.intervalTimer, bus.cgaAdapter]
         reset()
     }
 
@@ -64,6 +64,10 @@ final class Machine {
 
     var intervalTimer: ProgrammableIntervalTimer {
         bus.intervalTimer
+    }
+
+    var cgaAdapter: CGATextModeAdapter {
+        bus.cgaAdapter
     }
 
     func reset() {
@@ -457,7 +461,8 @@ final class Machine {
             lastMemoryMapError: bus.lastMemoryMapError,
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
             interruptController: interruptController.snapshot,
-            intervalTimer: intervalTimer.snapshot
+            intervalTimer: intervalTimer.snapshot,
+            video: cgaAdapter.snapshot
         )
     }
 }

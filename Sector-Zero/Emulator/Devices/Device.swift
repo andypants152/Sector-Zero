@@ -3,6 +3,13 @@ import Foundation
 protocol Device: AnyObject {
 }
 
+/// A device-backed physical-memory window. The bus supplies an offset relative
+/// to the mapped region so devices never need to know host backing-memory rules.
+protocol MemoryMappedDevice: Device {
+    func readByte(at offset: Int) -> UInt8
+    func writeByte(_ value: UInt8, at offset: Int)
+}
+
 /// A deterministic device driven from completed CPU/interrupt boundaries.
 /// Devices receive elapsed emulated clocks in batches; they never own threads
 /// or depend on host wall-clock time.

@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M43 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M44 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -24,7 +24,8 @@ sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
 completion policy; deterministic device scheduling and run/pause slices; PC
 physical memory map, protected system ROM, and project firmware loading; master
 8259A interrupt routing, masking, priority, and EOI; deterministic 8253 timer,
-IRQ0, and channel-2 speaker gate). The next milestone is M44 below.
+IRQ0, and channel-2 speaker gate; CGA 80×25 text VRAM, CRTC state, and snapshot-
+driven CRT rendering). The next milestone is M45 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -627,7 +628,7 @@ every intentional deviation in a machine-profile document before M41.
   fragmented-versus-batched long runs. BCD counting and modes 1/4/5 remain
   outside the firmware/DOS subset until software requires them.
 
-### M44 — CGA-compatible text-mode adapter
+### M44 — CGA-compatible text-mode adapter ✅
 - **Goal:** Make guest video memory, not a scripted boot scene, drive the CRT.
 - **Build:** Map CGA text memory, implement the minimal CRTC/status/adapter ports
   needed for 80×25 text, and translate character/attribute cells into the
@@ -638,6 +639,20 @@ every intentional deviation in a machine-profile document before M41.
 - **Tests:** VRAM mapping, character/attribute decoding, cursor registers,
   scrolling memory layouts, unmapped modes, snapshot immutability, and a visual
   fixture for the 80×25 frame.
+- **Completed:** The bus carves a device-backed 16 KiB CGA window at
+  B8000h–BBFFFh out of adapter space and maps the color CRTC, mode, palette, and
+  deterministic status ports at 3D4h–3DAh. The adapter decodes the visible page
+  from CRTC start/cursor addresses into 2,000 immutable CP437 character cells,
+  including the 16-color foreground palette, background intensity versus blink,
+  and cursor scan-line shape. Disabled, 40-column, and graphics configurations
+  preserve VRAM/registers but render a blank unsupported-mode frame. The Metal
+  view now consumes only `MachineSnapshot.video` through a locked copy; it no
+  longer reads a scripted boot scene or live emulator memory. `TextConsole`
+  renders decoded cells, character blink, and the CRTC cursor into the existing
+  640×400 framebuffer. Tests cover memory/port boundaries, attributes, scrolling,
+  cursor and status registers, unsupported modes, immutable snapshots, VRAM
+  preservation across mode changes, and a palette/glyph visual fixture.
+  Graphics modes and composite artifact color remain deferred.
 
 ### M45 — Keyboard/PPI input path
 - **Goal:** Deliver host keystrokes through PC-compatible hardware rather than

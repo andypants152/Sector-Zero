@@ -4,6 +4,7 @@ enum MemoryRegionKind: String, Equatable, Sendable {
     case ram
     case reserved
     case rom
+    case device
 }
 
 struct MemoryRegionSnapshot: Equatable, Sendable {
@@ -40,10 +41,18 @@ extension MemoryMapError: LocalizedError {
 private final class MappedMemoryRegion {
     let snapshot: MemoryRegionSnapshot
     var romBytes: [UInt8]?
+    let device: (any MemoryMappedDevice)?
 
-    init(name: String, range: ClosedRange<UInt32>, kind: MemoryRegionKind, romBytes: [UInt8]? = nil) {
+    init(
+        name: String,
+        range: ClosedRange<UInt32>,
+        kind: MemoryRegionKind,
+        romBytes: [UInt8]? = nil,
+        device: (any MemoryMappedDevice)? = nil
+    ) {
         self.snapshot = MemoryRegionSnapshot(name: name, range: range, kind: kind)
         self.romBytes = romBytes
+        self.device = device
     }
 }
 
@@ -83,6 +92,7 @@ final class EmulatorBus: Bus {
     private let memory: Memory
     let interruptController = ProgrammableInterruptController()
     let intervalTimer: ProgrammableIntervalTimer
+    let cgaAdapter = CGATextModeAdapter()
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
     /// adapters are page-aligned in normal operation, making the hot path one
@@ -105,12 +115,16 @@ final class EmulatorBus: Bus {
         if installPCMemoryMap {
             precondition(memory.size >= Memory.addressableSize, "PC memory map requires 1 MiB of backing storage")
             try! mapRAM(Self.conventionalRAMRange, name: "Conventional RAM")
-            try! mapReserved(Self.adapterRange, name: "Adapter Space")
+            try! mapReserved(0xA0000...0xB7FFF, name: "Adapter Space (Low)")
+            try! mapMemoryDevice(cgaAdapter, range: CGATextModeAdapter.memoryRange, name: "CGA Text VRAM")
+            try! mapReserved(0xBC000...0xEFFFF, name: "Adapter Space (High)")
             try! mapROM(Self.systemROMRange, image: [], name: "System ROM")
         }
         mapPortDevice(interruptController, to: ProgrammableInterruptController.commandPort...ProgrammableInterruptController.dataPort)
         mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.channel0Port...ProgrammableIntervalTimer.controlPort)
         mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.systemControlPort...ProgrammableIntervalTimer.systemControlPort)
+        mapPortDevice(cgaAdapter, to: CGATextModeAdapter.crtcIndexPort...CGATextModeAdapter.crtcDataPort)
+        mapPortDevice(cgaAdapter, to: CGATextModeAdapter.modeControlPort...CGATextModeAdapter.statusPort)
     }
 
     func readByte(at address: UInt32) -> UInt8 {
@@ -123,6 +137,8 @@ final class EmulatorBus: Bus {
             return 0xFF
         case .rom:
             return region.romBytes?[offset(of: address, in: region)] ?? 0xFF
+        case .device:
+            return region.device?.readByte(at: offset(of: address, in: region)) ?? 0xFF
         }
     }
 
@@ -141,6 +157,8 @@ final class EmulatorBus: Bus {
                 lastMemoryMapError = .writeToReadOnly(address)
             }
             rejectedROMWriteCount += 1
+        case .device:
+            region.device?.writeByte(value, at: offset(of: address, in: region))
         }
     }
 
@@ -189,6 +207,14 @@ final class EmulatorBus: Bus {
         try addRegion(MappedMemoryRegion(name: name, range: range, kind: .rom, romBytes: bytes))
     }
 
+    func mapMemoryDevice(
+        _ device: any MemoryMappedDevice,
+        range: ClosedRange<UInt32>,
+        name: String
+    ) throws {
+        try addRegion(MappedMemoryRegion(name: name, range: range, kind: .device, device: device))
+    }
+
     /// Replaces the system ROM contents, top-aligning common 8/16/32/64 KiB
     /// firmware images so their final 16 bytes cover the 8086 reset vector.
     func loadSystemROM(_ image: Data) throws {
@@ -231,6 +257,8 @@ final class EmulatorBus: Bus {
                 throw MemoryMapError.imageTargetsReservedSpace(address)
             case .rom:
                 region.romBytes?[offset(of: address, in: region)] = byte
+            case .device:
+                region.device?.writeByte(byte, at: offset(of: address, in: region))
             }
         }
     }

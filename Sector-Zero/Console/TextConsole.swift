@@ -10,6 +10,8 @@ final class TextConsole {
 
     private(set) var cursorColumn: Int = 0
     private(set) var cursorRow: Int = 0
+    private var cursorStartLine = 0
+    private var cursorEndLine = 15
 
     var foreground: ConsoleColor
     var background: ConsoleColor
@@ -55,6 +57,19 @@ final class TextConsole {
         cursorRow = min(max(row, 0), rows - 1)
     }
 
+    func apply(video snapshot: CGATextModeSnapshot) {
+        precondition(snapshot.columns == columns && snapshot.rows == rows)
+        precondition(snapshot.cells.count == columns * rows)
+        cells = snapshot.cells
+        cursorStartLine = snapshot.cursorStartLine
+        cursorEndLine = snapshot.cursorEndLine
+        isCursorEnabled = snapshot.cursorPosition != nil
+        if let cursorPosition = snapshot.cursorPosition {
+            cursorColumn = cursorPosition % columns
+            cursorRow = cursorPosition / columns
+        }
+    }
+
     func write(_ string: String) {
         for scalar in string.unicodeScalars {
             switch scalar {
@@ -96,14 +111,14 @@ final class TextConsole {
     func render(into frameBuffer: FrameBuffer, time: TimeInterval) {
         for row in 0..<rows {
             for column in 0..<columns {
-                renderCell(column: column, row: row, into: frameBuffer)
+                renderCell(column: column, row: row, into: frameBuffer, time: time)
             }
         }
 
         renderCursor(into: frameBuffer, time: time)
     }
 
-    private func renderCell(column: Int, row: Int, into frameBuffer: FrameBuffer) {
+    private func renderCell(column: Int, row: Int, into frameBuffer: FrameBuffer, time: TimeInterval) {
         let cell = cells[index(column: column, row: row)]
         let originX = column * font.cellWidth
         let originY = row * font.cellHeight
@@ -116,6 +131,7 @@ final class TextConsole {
             color: cell.background.frameBufferColor
         )
 
+        guard !cell.blink || isBlinkVisible(time: time) else { return }
         for glyphRow in 0..<font.cellHeight {
             let bits = font.rowBits(for: cell.codePoint, row: glyphRow)
             for glyphColumn in 0..<font.cellWidth {
@@ -139,13 +155,16 @@ final class TextConsole {
         }
 
         let originX = cursorColumn * font.cellWidth
-        let originY = cursorRow * font.cellHeight
+        let firstLine = min(max(cursorStartLine, 0), font.cellHeight - 1)
+        let lastLine = min(max(cursorEndLine, firstLine), font.cellHeight - 1)
+        let originY = cursorRow * font.cellHeight + firstLine
+        let cursorCell = cells[index(column: cursorColumn, row: cursorRow)]
         frameBuffer.fillRect(
             x: originX,
             y: originY,
             width: font.cellWidth,
-            height: font.cellHeight,
-            color: foreground.frameBufferColor
+            height: lastLine - firstLine + 1,
+            color: cursorCell.foreground.frameBufferColor
         )
     }
 
@@ -155,6 +174,11 @@ final class TextConsole {
         }
 
         let phase = Int((time / cursorBlinkInterval).rounded(.down))
+        return phase.isMultiple(of: 2)
+    }
+
+    private func isBlinkVisible(time: TimeInterval) -> Bool {
+        let phase = Int((time / 0.5).rounded(.down))
         return phase.isMultiple(of: 2)
     }
 

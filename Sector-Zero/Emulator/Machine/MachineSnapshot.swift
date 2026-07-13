@@ -14,4 +14,5 @@ struct MachineSnapshot: Equatable, Sendable {
     let rejectedROMWriteCount: Int
     let interruptController: ProgrammableInterruptControllerSnapshot
     let intervalTimer: ProgrammableIntervalTimerSnapshot
+    let video: CGATextModeSnapshot
 }
