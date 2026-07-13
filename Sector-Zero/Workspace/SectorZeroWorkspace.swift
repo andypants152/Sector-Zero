@@ -35,10 +35,10 @@ final class SectorZeroWorkspace {
 
     var statusText: String {
         guard let currentProject else {
-            return "No Project Open"
+            return "No Machine Open"
         }
 
-        return "Project Open - \(currentProject.projectURL.deletingLastPathComponent().path)"
+        return "Machine Open - \(currentProject.projectURL.deletingLastPathComponent().path)"
     }
 
     @discardableResult
@@ -69,6 +69,22 @@ final class SectorZeroWorkspace {
         openProject(at: recentProject.projectURL)
     }
 
+    @discardableResult
+    func deleteProject(_ recentProject: RecentProject) -> Bool {
+        do {
+            try SectorZeroProjectStore.deleteProject(at: recentProject.projectURL)
+            if currentProject?.projectURL == recentProject.projectURL {
+                currentProject = nil
+            }
+            forgetProject(at: recentProject.projectURL)
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     private func open(_ project: SectorZeroProject) {
         currentProject = project
         errorMessage = nil
@@ -86,6 +102,11 @@ final class SectorZeroWorkspace {
         if recentProjects.count > maximumRecentProjects {
             recentProjects.removeLast(recentProjects.count - maximumRecentProjects)
         }
+        saveRecentProjects()
+    }
+
+    private func forgetProject(at projectURL: URL) {
+        recentProjects.removeAll { $0.projectURL == projectURL }
         saveRecentProjects()
     }
 

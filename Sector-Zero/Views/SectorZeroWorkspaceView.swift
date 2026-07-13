@@ -21,12 +21,12 @@ struct SectorZeroWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.sectorWorkspace)
-        .alert("Project Error", isPresented: errorBinding) {
+        .alert("Machine Error", isPresented: errorBinding) {
             Button("OK") {
                 workspace.errorMessage = nil
             }
         } message: {
-            Text(workspace.errorMessage ?? "An unknown project error occurred.")
+            Text(workspace.errorMessage ?? "An unknown machine error occurred.")
         }
     }
 

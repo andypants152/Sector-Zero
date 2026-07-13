@@ -11,6 +11,7 @@ struct ProjectBrowserView: View {
 
     @State private var isShowingNewProject = false
     @State private var isImportingProject = false
+    @State private var projectPendingDeletion: RecentProject?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -37,11 +38,21 @@ struct ProjectBrowserView: View {
         ) { result in
             openImportedProject(result)
         }
+        .alert("Delete Machine?", isPresented: isConfirmingDeletion) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let projectPendingDeletion {
+                    workspace.deleteProject(projectPendingDeletion)
+                }
+            }
+        } message: {
+            Text("This will permanently delete \(projectPendingDeletion?.projectName ?? "this machine") and its files.")
+        }
     }
 
     private var title: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("PROJECTS")
+            Text("MACHINES")
                 .font(.sectorMono(12, weight: .semibold))
                 .tracking(1.8)
                 .foregroundStyle(Color.sectorMutedText)
@@ -56,7 +67,7 @@ struct ProjectBrowserView: View {
             Button {
                 isShowingNewProject = true
             } label: {
-                Label("Create New Project", systemImage: "plus")
+                Label("Create New Machine", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.borderedProminent)
@@ -64,7 +75,7 @@ struct ProjectBrowserView: View {
             Button {
                 openExistingProject()
             } label: {
-                Label("Open Existing Project", systemImage: "folder")
+                Label("Open Existing Machine", systemImage: "folder")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
@@ -74,7 +85,7 @@ struct ProjectBrowserView: View {
     @ViewBuilder
     private var currentProjectSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CURRENT PROJECT")
+            Text("CURRENT MACHINE")
                 .font(.sectorMono(11, weight: .semibold))
                 .tracking(1.2)
                 .foregroundStyle(Color.sectorMutedText)
@@ -90,7 +101,7 @@ struct ProjectBrowserView: View {
                         .lineLimit(2)
                 }
             } else {
-                Text("No project open")
+                Text("No machine open")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.sectorMutedText)
             }
@@ -106,29 +117,42 @@ struct ProjectBrowserView: View {
                 .foregroundStyle(Color.sectorMutedText)
 
             if workspace.recentProjects.isEmpty {
-                Text("Recently opened projects will appear here.")
+                Text("Recently opened machines will appear here.")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.sectorMutedText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 6) {
                     ForEach(workspace.recentProjects) { project in
-                        Button {
-                            workspace.openRecentProject(project)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(project.projectName)
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(Color.sectorText)
-                                Text(project.projectURL.deletingLastPathComponent().path)
-                                    .font(.sectorMono(10, weight: .regular))
-                                    .foregroundStyle(Color.sectorMutedText)
-                                    .lineLimit(1)
+                        HStack(spacing: 8) {
+                            Button {
+                                workspace.openRecentProject(project)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(project.projectName)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Color.sectorText)
+                                    Text(project.projectURL.deletingLastPathComponent().path)
+                                        .font(.sectorMono(10, weight: .regular))
+                                        .foregroundStyle(Color.sectorMutedText)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 6)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
+                            .buttonStyle(.plain)
+
+                            Button(role: .destructive) {
+                                projectPendingDeletion = project
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.sectorMutedText)
+                            .help("Delete machine")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -138,7 +162,7 @@ struct ProjectBrowserView: View {
     private func openExistingProject() {
         #if os(macOS)
         let panel = NSOpenPanel()
-        panel.title = "Open Sector Zero Project"
+        panel.title = "Open Sector Zero Machine"
         panel.prompt = "Open"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -170,6 +194,16 @@ struct ProjectBrowserView: View {
             workspace.openProject(at: url)
         case .failure(let error):
             workspace.errorMessage = error.localizedDescription
+        }
+    }
+
+    private var isConfirmingDeletion: Binding<Bool> {
+        Binding {
+            projectPendingDeletion != nil
+        } set: { isPresented in
+            if !isPresented {
+                projectPendingDeletion = nil
+            }
         }
     }
 }

@@ -8,17 +8,17 @@ enum SectorZeroProjectStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyProjectName:
-            return "Enter a project name."
+            return "Enter a machine name."
         case .projectAlreadyExists(let url):
-            return "A project already exists at \(url.path)."
+            return "A machine already exists at \(url.path)."
         case .invalidProjectPackage(let url):
-            return "No Sector Zero project metadata was found at \(url.path)."
+            return "No Sector Zero machine metadata was found at \(url.path)."
         }
     }
 }
 
 enum SectorZeroProjectStore {
-    static let packageExtension = "szproj"
+    static let packageExtension = "szm"
     static let metadataFileName = "sectorzero.json"
 
     static func createProject(named rawName: String, in destinationFolderURL: URL) throws -> SectorZeroProject {
@@ -83,6 +83,17 @@ enum SectorZeroProjectStore {
         let metadataURL = project.projectURL.appendingPathComponent(metadataFileName, isDirectory: false)
         let data = try encoder.encode(project)
         try data.write(to: metadataURL, options: [.atomic])
+    }
+
+    static func deleteProject(at url: URL) throws {
+        let packageURL = normalizedPackageURL(from: url)
+        let metadataURL = packageURL.appendingPathComponent(metadataFileName, isDirectory: false)
+
+        guard FileManager.default.fileExists(atPath: metadataURL.path) else {
+            throw SectorZeroProjectStoreError.invalidProjectPackage(packageURL)
+        }
+
+        try FileManager.default.removeItem(at: packageURL)
     }
 
     private static func normalizedPackageURL(from url: URL) -> URL {

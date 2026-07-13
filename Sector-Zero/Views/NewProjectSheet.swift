@@ -23,9 +23,9 @@ struct NewProjectSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("New Project")
+            Text("New Machine")
                 .font(.title2.weight(.semibold))
-            Text("Create a Sector Zero project package on disk.")
+            Text("Create a Sector Zero machine package on disk.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -34,10 +34,10 @@ struct NewProjectSheet: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Project Name")
+                Text("Machine Name")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                TextField("Project Name", text: $projectName)
+                TextField("Machine Name", text: $projectName)
                     .textFieldStyle(.roundedBorder)
             }
 
@@ -92,7 +92,7 @@ struct NewProjectSheet: View {
     private func chooseDestinationFolder() {
         #if os(macOS)
         let panel = NSOpenPanel()
-        panel.title = "Choose Project Destination"
+        panel.title = "Choose Machine Destination"
         panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
