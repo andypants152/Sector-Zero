@@ -11,11 +11,19 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M21 are complete and tested (reset, fetch, decode, execute loop;
-register file; ModR/M; MOV forms incl. r/m,imm and moffs; XCHG; ADD/SUB/CMP
-incl. immediates; AND/OR/XOR; TEST + accumulator-immediate forms; conditional
-jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far). The next
-milestone is M22 below.
+**Status:** M1–M22 are complete and tested (reset, fetch, decode, execute loop;
+register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
+ADD/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator-immediate forms;
+conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
+JMP near/far; segment overrides). The next milestone is M23 below.
+
+**Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
+instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
+0x3E prefixes in a loop (2 clocks each, last wins), sets the override, then
+decodes+executes+clears — one atomic step, no snapshot sees it set. **All
+memory-operand access must route through `resolved(_:)`** (the operand
+read/write helpers and moffs do; stack/code accesses deliberately don't). New
+memory-touching instructions (string ops, PUSH/POP m16) must honor it too.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -178,7 +186,7 @@ composes on top of it). 3 clocks. `FE`/`FF` r/m forms deferred.
 
 ---
 
-## Completed (continued)
+## Completed (M17–M22)
 
 ### M17 — LOOP family + JCXZ (0xE0–0xE3) ✅
 `LoopCondition` carries the ZF gate (E0 LOOPNE, E1 LOOPE, E2 unconditional)
@@ -200,8 +208,6 @@ reflecting both, execution continuing at the far target, and the BIOS
 handoff shape (far jump from the reset segment down to low memory).
 
 ---
-
-## Next milestones (M19–M26)
 
 ### M19 — Logical ALU: AND/OR/XOR (0x08–0x0B, 0x20–0x23, 0x30–0x33) ✅
 `ALUBinaryOp` gains `.and`/`.or`/`.xor`; pure `ALU.and/or/xor` (8/16) share
@@ -242,7 +248,7 @@ bytes); the deterministic-decode test stream grew to 6 for headroom. Tested:
 XCHG all forms flag-free, moffs each direction + DS addressing + little-endian,
 MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
-### M22 — Segment registers: MOV sreg, PUSH/POP sreg, override prefixes (0x8C/0x8E, 0x06–0x1F evens, 0x26/0x2E/0x36/0x3E)
+### M22 — Segment registers: MOV sreg, PUSH/POP sreg, override prefixes (0x8C/0x8E, 0x06–0x1F evens, 0x26/0x2E/0x36/0x3E) ✅
 - **Goal:** Real segmented addressing — programs can finally set up their own
   DS/ES/SS instead of tests poking `writeSegment`.
 - **Build:** `8C`/`8E` MOV r/m16 ↔ sreg (the ModR/M reg field indexes
@@ -258,6 +264,10 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   redirecting a BP-based (SS-default) access to DS and vice versa, override +
   ModR/M + displacement byte-stream length, POP SS/interrupt-shadow noted as
   deferred.
+
+---
+
+## Next milestones (M23–M26)
 
 ### M23 — Flag manipulation: PUSHF/POPF, LAHF/SAHF, CLC/STC/CMC, CLI/STI, CLD/STD (0x9C/0x9D, 0x9E/0x9F, 0xF5/0xF8/0xF9, 0xFA/0xFB, 0xFC/0xFD)
 - **Goal:** Direct FLAGS access — prerequisite for IRET, context switching,
@@ -308,8 +318,9 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   /2 NOT (no flags), /3 NEG (SUB from zero; CF set unless operand was 0),
   /4 MUL (AX = AL×r/m8, DX:AX = AX×r/m16; CF/OF set when the high half is
   nonzero), /5 IMUL (signed), /6 DIV, /7 IDIV (quotient/remainder into
-  AL/AH or AX/DX). Divide-by-zero should raise the not-yet-implemented INT 0
-  path — until interrupts exist, halt with a documented sentinel and a TODO.
+  AL/AH or AX/DX). Divide-by-zero and quotient overflow should raise the
+  not-yet-implemented INT 0 path — until interrupts exist, halt with a
+  documented sentinel and a TODO.
 - **Don't:** Exact multi-cycle timing fidelity (MUL/DIV timings vary by
   operand; use the documented ranges' documented typical values and note it).
 - **Tests:** NOT/NEG including NEG 0 and NEG 0x80/0x8000 (OF set, value
@@ -319,23 +330,304 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
 ---
 
-## Beyond M26
+## CPU completion (M27–M39)
 
-Remaining CPU work, roughly in order: the `FE`/`FF` INC/DEC/CALL/JMP/PUSH r/m
-group → far CALL/RET (`9A`/`CB`) + RET imm16 (`C2`/`CA`) → string ops
-(MOVS/CMPS/SCAS/LODS/STOS) with REP/REPE/REPNE prefixes and DF → LEA/LDS/LES →
-INT/INTO/IRET and the interrupt vector table (retiring both the unknown-opcode
-no-op policy and the M26 divide-by-zero sentinel) → wake-from-halt → decimal
-adjust (DAA/DAS/AAA/AAS/AAM/AAD) → CBW/CWD, WAIT/LOCK/ESC stubs. Then the
-machine grows outward:
+These milestones finish the documented 8086 integer surface before peripheral
+work begins. Keep each milestone independently shippable; an opcode-coverage
+matrix introduced in M39 is the CPU-completion gate.
+
+### M27 — Remaining r/m stack and INC/DEC forms (0x8F, 0xFE, 0xFF /0, /1, /6)
+- **Goal:** Remove the last register-only restrictions from basic stack and
+  unary operations.
+- **Build:** `FE /0` and `/1` INC/DEC r/m8; `FF /0` and `/1` INC/DEC r/m16;
+  `FF /6` PUSH r/m16; `8F /0` POP r/m16. Reuse the established operand helpers
+  so segment overrides affect the data operand while stack traffic remains
+  SS-relative. Preserve CF for INC/DEC. Consume the complete instruction before
+  rejecting unsupported group selectors.
+- **Don't:** Add the `FF` control-transfer selectors yet.
+- **Tests:** Register and memory forms at both widths, CF preservation, BP-based
+  default segment plus override, SP wrap, the 8086 PUSH-SP value quirk, POP into
+  SP, and nonmatching group selectors staying byte-aligned.
+
+### M28 — Indirect near CALL/JMP (0xFF /2, /4)
+- **Goal:** Allow procedure pointers and jump tables within the current code
+  segment.
+- **Build:** `FF /2` CALL near absolute r/m16 pushes the post-decode IP, then
+  loads IP; `FF /4` JMP near absolute r/m16 loads IP without touching CS.
+  Resolve the source value before mutating SP or IP.
+- **Don't:** Treat these as relative displacements; add far pointers; change
+  flags.
+- **Tests:** Register and memory targets, return-address correctness through
+  `RET`, target and stack wrap, segment override on a memory pointer, and exact
+  clocks including EA cost.
+
+### M29 — Far CALL/JMP and immediate RET (0x9A, 0xCA–0xCB, 0xC2, 0xFF /3, /5)
+- **Goal:** Complete inter-segment procedure and indirect transfer support.
+- **Build:** Direct far CALL (`9A`), indirect far CALL/JMP through m16:16
+  (`FF /3`, `/5`), RET near imm16 (`C2`), RET far (`CB`), and RET far imm16
+  (`CA`). Far CALL pushes CS and return IP in the architecturally correct order;
+  far RET restores IP then CS. The RET immediate adjusts SP after popping.
+- **Don't:** Permit register operands for m16:16 selectors; implement task or
+  privilege semantics from later x86 chips.
+- **Tests:** Direct and indirect round-trips, stack word order, caller argument
+  cleanup, offset/segment reads across a 16-bit offset wrap, segment override on
+  pointer reads, invalid register forms, and flags unchanged.
+
+### M30 — Address and far-pointer loads: LEA/LDS/LES (0x8D, 0xC4–0xC5)
+- **Goal:** Support compiler-generated address calculation and far data
+  pointers.
+- **Build:** LEA writes the decoded effective offset without reading memory;
+  LDS/LES read m16:16 and update the GP destination plus DS/ES. Make the ModR/M
+  model expose an effective offset separately from its resolved segment.
+- **Don't:** Accept register ModR/M operands; apply a segment override to LEA
+  (there is no data read).
+- **Tests:** Every addressing family, displacement wrap, no-read LEA using a
+  spying bus, little-endian far pointers, segment override for LDS/LES, and
+  atomic destination updates.
+
+### M31 — String data movement: MOVS/LODS/STOS (0xA4–0xA5, 0xAA–0xAD)
+- **Goal:** Establish one-iteration string semantics and make DF operational.
+- **Build:** Byte/word MOVS, LODS, and STOS. Source is DS:SI (subject to segment
+  override); destination is always ES:DI and never overridden. Advance or
+  retreat SI/DI by the operand width according to DF, with 16-bit wrap.
+- **Don't:** Add REP or compare strings; let a prefix redirect ES:DI.
+- **Tests:** Both widths and DF directions, SI/DI wrap, source override,
+  destination fixed to ES, little-endian word transfer, flags unchanged, and
+  documented single-iteration clocks.
+
+### M32 — String comparison: CMPS/SCAS (0xA6–0xA7, 0xAE–0xAF)
+- **Goal:** Complete the one-iteration string instruction family.
+- **Build:** CMPS computes source minus destination and advances SI+DI; SCAS
+  computes AL/AX minus ES:DI and advances DI. Reuse SUB flag generation.
+- **Don't:** Write either compared value; add repeat behavior.
+- **Tests:** Equality/borrow/overflow flag cases, byte and word forms, both DF
+  directions, source override only for CMPS, offset wrap, and operand order.
+
+### M33 — REP/REPE/REPNE prefixes (0xF2–0xF3)
+- **Goal:** Run counted string operations with authentic CX and ZF gates.
+- **Build:** Extend the prefix loop so segment and repeat prefixes compose, last
+  repeat prefix wins, and the entire prefixed instruction remains one
+  `Machine.step()` for now. REP repeats MOVS/LODS/STOS while CX is nonzero;
+  REPE/REPNE repeat CMPS/SCAS while CX is nonzero and the post-iteration ZF gate
+  holds. CX=0 performs no data access. Charge setup plus per-iteration clocks.
+  Structure execution so an interrupt boundary can be inserted between
+  iterations in M35 without redesigning the decoded instruction.
+- **Don't:** Give REP meaning on unrelated opcodes beyond consuming the prefix;
+  implement 186+ aliases.
+- **Tests:** Zero/one/many iterations, early compare exit both ways, DF, CX and
+  address wrap, mixed/repeated prefixes with last-one-wins, segment override
+  composition, and cycle totals.
+
+### M34 — Software interrupts and IRET (0xCC–0xCF)
+- **Goal:** Establish one reusable real-mode interrupt-entry mechanism.
+- **Build:** INT3, INT imm8, INTO, and IRET. Interrupt entry reads the vector
+  from physical `0000:(type×4)`, pushes FLAGS then CS then return IP, clears
+  TF/IF, and loads CS:IP. IRET pops IP, CS, then FLAGS through `CPUFlags` so
+  reserved bits remain correct. INTO does nothing when OF is clear.
+- **Don't:** Add external interrupt lines, protected-mode semantics, or replace
+  unsupported opcodes with a fictional invalid-opcode interrupt (the 8086 has no
+  `#UD`).
+- **Tests:** Exact stack frame and order, IVT little-endian layout, nested INT
+  and IRET, INT3 return IP, both INTO paths, SP wrap, and reserved FLAGS bits.
+
+### M35 — CPU-generated and external interrupts, shadows, HLT wake
+- **Goal:** Make interrupts a machine-level event rather than only an opcode.
+- **Build:** Route divide errors from M26 through vector 0; deliver trap vector 1
+  after an instruction when TF is set; add NMI and maskable INTR inputs with
+  instruction-boundary arbitration. NMI ignores IF; INTR requires IF. Implement
+  the one-instruction inhibition after STI and MOV/POP SS, allow accepted
+  interrupts to wake HLT, and make REP resumable between iterations without
+  repeating completed work. Preserve original-8086 return semantics: divide
+  error is recognized after DIV/IDIV and saves the following IP, unlike the
+  restartable fault semantics of later x86 generations.
+- **Don't:** Add a PIC yet; the tests drive interrupt lines directly.
+- **Tests:** Priority and masking, the 8086 divide-error return IP, trap return IP,
+  STI/SS shadows, HLT remaining asleep without an accepted interrupt, NMI wake,
+  interrupt and resume midway through REP, and nested IRET recovery.
+
+### M36 — Decimal and ASCII adjust (0x27, 0x2F, 0x37, 0x3F, 0xD4–0xD5)
+- **Goal:** Cover the 8086's BCD/ASCII arithmetic used by early software.
+- **Build:** DAA, DAS, AAA, AAS, AAM, and AAD with explicit per-instruction flag
+  rules. AAM's encoded base byte must be consumed (normally 10); a zero base
+  raises divide error through M35.
+- **Don't:** Generalize behavior from later processors where undocumented flags
+  differ; guess undefined flag values—choose and document a deterministic policy.
+- **Tests:** Intel examples, all AF/CF input combinations for DAA/DAS, carry and
+  no-carry AAA/AAS, non-decimal AAM/AAD bases, base-zero fault, and unchanged or
+  deterministic undefined flags.
+
+### M37 — Sign extension, XLAT, and translation helpers (0x98–0x99, 0xD7)
+- **Goal:** Finish the small but common data-conversion instructions.
+- **Build:** CBW sign-extends AL into AX; CWD sign-extends AX into DX:AX; XLAT
+  loads AL from DS:[BX+unsigned AL], subject to segment override. No flags.
+- **Don't:** Add 386-size variants.
+- **Tests:** Positive/negative/boundary values, XLAT address wrap and segment
+  override, flags untouched, and exact clocks.
+
+### M38 — Port I/O bus and IN/OUT (0xE4–0xE7, 0xEC–0xEF)
+- **Goal:** Create the CPU↔device boundary required by PC-compatible hardware.
+- **Build:** Add a 16-bit I/O-port space beside memory on `Bus`, with explicit
+  byte/word reads and writes. Implement immediate-port and DX-port IN/OUT for
+  AL/AX. Define unmapped reads/writes deterministically and keep device lookup
+  out of `CPU8086`.
+- **Don't:** Memory-map I/O or introduce concrete peripherals.
+- **Tests:** All eight encodings, immediate-port zero extension, full 16-bit DX
+  ports, word transfers through a spy port device, unmapped behavior,
+  flags/register isolation, and clocks.
+
+### M39 — LOCK/WAIT/ESC policy and CPU completion gate (0x9B, 0xD8–0xDF, 0xF0)
+- **Goal:** Close the opcode table deliberately and declare the integer core
+  ready for machine work.
+- **Build:** WAIT observes a stub coprocessor-ready signal; ESC consumes its
+  ModR/M/displacement and delegates to a no-coprocessor stub; LOCK participates
+  in the prefix loop and marks valid memory read-modify-write operations atomic
+  at the bus boundary. Add a generated or table-driven 256-opcode coverage test
+  classifying every encoding as implemented, intentionally aliased/reserved, or
+  explicitly unsupported. Replace silent provisional unknown handling with an
+  observable emulator fault for unsupported implementation gaps while retaining
+  documented 8086 alias/reserved behavior.
+- **Don't:** Emulate an 8087; invent an invalid-opcode CPU exception.
+- **Tests:** Prefix composition, legal/illegal LOCK use, WAIT ready/not-ready,
+  ESC byte consumption for every ModR/M length, no accidental unknown opcodes in
+  the supported matrix, and representative end-to-end CPU diagnostics.
+
+---
+
+## Machine and boot path (M40–M50)
+
+**Compatibility target:** define Sector Zero as an IBM-PC-compatible real-mode
+machine built around the existing 8086 core. It need not reproduce 8088 bus
+timing, but its memory map, I/O ports, interrupts, BIOS contracts, and disk/video
+behavior must be compatible enough for unmodified PC DOS applications. Record
+every intentional deviation in a machine-profile document before M41.
+
+### M40 — Deterministic machine scheduler + run/pause
+- **Goal:** Turn instruction clock counts into the timebase that drives devices
+  without coupling them to the UI.
+- **Build:** `Machine.step()` reports elapsed clocks to clocked devices; add a
+  bounded run slice with pause/cancel control; publish one immutable snapshot per
+  slice rather than per cycle. Wire the existing UI RUN control through the
+  workspace and keep execution off the main actor.
+- **Don't:** Promise wall-clock accuracy or add a device thread per peripheral.
+- **Tests:** Deterministic device tick totals, halt/interrupt behavior, run bound,
+  pause latency, reset, and snapshot consistency; UI tests for RUN/PAUSE state.
+
+### M41 — PC memory map, ROM regions, and firmware loading
+- **Goal:** Replace flat writable RAM with a bus-owned address map suitable for
+  firmware and adapters.
+- **Build:** Map conventional RAM, reserved adapter space, and read-only system
+  ROM including the reset vector. Support deterministic ROM images in tests and
+  project-configured firmware in the app. Preserve 20-bit physical wrap.
+- **Don't:** Put mapping policy in `Memory`; silently allow writes to ROM.
+- **Tests:** Region boundaries, ROM write protection, reset-vector fetch, word
+  access across region and 1 MiB boundaries, overlap rejection, and snapshots.
+
+### M42 — 8259A-compatible programmable interrupt controller
+- **Goal:** Multiplex hardware IRQs onto the CPU's INTR input.
+- **Build:** Model the master PIC's initialization words, mask register, request/
+  in-service state, priority, acknowledge/vector delivery, and EOI through its
+  standard ports. Devices raise/lower named IRQ lines through `Machine`/`Bus`.
+- **Don't:** Add a cascaded second PIC until software requires IRQ8–15.
+- **Tests:** Initialization, masks, fixed priority, simultaneous IRQs, EOI,
+  level transitions, IF interaction, and HLT wake.
+
+### M43 — 8253-compatible timer and channel-2 speaker gate
+- **Goal:** Provide BIOS timekeeping and the periodic IRQ0 source.
+- **Build:** Implement the PIT control/data ports and the counter modes required
+  by BIOS/DOS, clocked deterministically from M40. Channel 0 raises IRQ0 through
+  the PIC; expose channel 2 plus its gate/output as state for a later audio sink.
+- **Don't:** Generate host audio yet or tie timer progress to display refresh.
+- **Tests:** Programming/latching, divisor-zero semantics, periodic IRQ cadence,
+  mask/EOI interaction, channel-2 gate, and long-run determinism.
+
+### M44 — CGA-compatible text-mode adapter
+- **Goal:** Make guest video memory, not a scripted boot scene, drive the CRT.
+- **Build:** Map CGA text memory, implement the minimal CRTC/status/adapter ports
+  needed for 80×25 text, and translate character/attribute cells into the
+  existing `TextConsole`/Metal renderer. Snapshot video state across the
+  core→UI boundary.
+- **Don't:** Add graphics modes, composite-artifact color, or let the renderer
+  read live emulator memory.
+- **Tests:** VRAM mapping, character/attribute decoding, cursor registers,
+  scrolling memory layouts, unmapped modes, snapshot immutability, and a visual
+  fixture for the 80×25 frame.
+
+### M45 — Keyboard/PPI input path
+- **Goal:** Deliver host keystrokes through PC-compatible hardware rather than
+  directly into a console model.
+- **Build:** Add the minimal 8255/PPI-compatible ports and keyboard scan-code
+  queue needed by the selected BIOS contract, including IRQ1 through the PIC.
+  Translate macOS key events at the workspace boundary.
+- **Don't:** Bake Unicode characters into the hardware layer or make key repeat
+  nondeterministic in tests.
+- **Tests:** Make/break scan codes, modifiers, queue ordering/overflow policy,
+  IRQ1 masking and acknowledgement, deterministic repeat, reset, and focus loss.
+
+### M46 — 8237-compatible DMA subset
+- **Goal:** Establish the transfer mechanism required by a PC floppy controller.
+- **Build:** Implement the channel/register subset used for floppy DMA, including
+  address/count programming, page register, terminal count, direction, masking,
+  and cycle accounting through the system bus.
+- **Don't:** Implement unused channels/modes speculatively or bypass memory-map
+  protections.
+- **Tests:** Device↔memory transfers, terminal count, 64 KiB boundary behavior,
+  mask/request state, reset defaults, and deterministic clock impact.
+
+### M47 — Floppy controller + project disk image
+- **Goal:** Expose the project's disk image as a bootable PC floppy.
+- **Build:** Implement the minimal 765-compatible command/result phases needed
+  for reset, seek/recalibrate, sense interrupt, and DMA-backed sector reads;
+  raise IRQ6 through the PIC. Add safe mount/eject and deterministic geometry
+  detection for supported image sizes.
+- **Don't:** Start with writes, copy protection, or every controller command.
+- **Tests:** Command state machine, CHS reads, DMA/IRQ ordering, missing/bad media,
+  end-of-track and bounds errors, reset, and fixture-image integrity.
+
+### M48 — Clean-room BIOS foundation and diagnostics
+- **Goal:** Execute real firmware from the reset vector and prove the whole
+  machine before attempting DOS.
+- **Build:** Add a reproducible firmware build artifact that initializes the
+  IVT/BDA, PIC, PIT, video, keyboard, and floppy path; provide the minimal INT
+  10h/13h/16h/1Ah services required by the boot path. Add a diagnostic ROM that
+  reports pass/fail codes over text video and a test-only debug port.
+- **Don't:** Copy proprietary IBM BIOS code; hide host-side shortcuts behind BIOS
+  interrupt handlers.
+- **Tests:** Reproducible ROM build, POST state, service contracts, diagnostic
+  pass under bounded cycles, and failures that identify the responsible device.
+
+### M49 — Boot-sector execution gate
+- **Goal:** Reach and execute sector 0 from an unmodified disk image.
+- **Build:** BIOS bootstrap loads the boot sector at 0000:7C00, validates media
+  errors, establishes the documented register contract, and transfers control.
+  Add debugger affordances for breakpoints, bounded run, memory inspection, and
+  an instruction trace export so boot failures are diagnosable.
+- **Don't:** Patch the boot sector or special-case its instruction stream.
+- **Tests:** Known diagnostic boot sectors, bad signature/read failure paths,
+  register/stack contract at handoff, deterministic trace golden files, and
+  successful text output through emulated video.
+
+### M50 — MS-DOS 2.0 boot, then MS-DOS 4.0 qualification
+- **Goal:** First reach a stable MS-DOS 2.0 command prompt; only then qualify the
+  broader MS-DOS 4.0 target.
+- **Build:** Create pinned, reproducible disk fixtures from the Microsoft source
+  release; close compatibility gaps using traces and focused regression tests.
+  Define success as booting, keyboard input, timer progress, file reads, and a
+  small command/program smoke suite. Repeat the suite for 4.0 after 2.0 is green.
+- **Don't:** Add opcode or device hacks keyed to DOS addresses; claim App Store
+  distributability without a separate packaging, attribution, trademark, and
+  legal review.
+- **Tests:** Bounded-cycle boot to prompt, `VER`/`DIR`/file-read fixtures,
+  keyboard editing, timer rollover sanity, warm/cold reboot, deterministic disk
+  reads, and a saved failure trace on timeout.
+
+The intended dependency chain is now explicit:
 
 ```
-CPU → Memory → Interrupts → Devices → BIOS → Boot sector → MS-DOS 2.0 → MS-DOS 4.0
+CPU completeness → scheduling/memory → interrupts/timer → video/keyboard
+                 → DMA/floppy → BIOS diagnostics → boot sector → DOS 2 → DOS 4
 ```
 
-MS-DOS 2.0 boots first as a stepping stone: it's MIT-licensed like 4.0, needs far
-less of the machine to come up, and its source is small enough to read alongside a
-debugger when boot goes wrong. 4.0 (also MIT, so bundleable in an App Store build)
-remains the shipping target.
-
-Do not attempt to boot anything until the CPU core is trustworthy.
+The Microsoft MS-DOS 1.25/2.0/4.0 source repository is MIT-licensed, making it a
+useful source-level diagnostic reference and fixture input. Distribution inside
+the shipping app remains a separate release/legal decision. Do not attempt the
+DOS milestones until the M39 CPU coverage gate and M48 diagnostic ROM both pass.
