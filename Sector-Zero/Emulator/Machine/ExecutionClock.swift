@@ -10,4 +10,9 @@ final class ExecutionClock {
     func tick() {
         cycleCount += 1
     }
+
+    /// Charges the cost of one executed instruction to the running cycle count.
+    func advance(by cycles: Int) {
+        cycleCount += UInt64(cycles)
+    }
 }

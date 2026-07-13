@@ -5,6 +5,7 @@ final class Machine {
     let bus: Bus
     let cpu: CPU8086
     private let clock: ExecutionClock
+    private let decoder = InstructionDecoder()
 
     init(memory: Memory = Memory()) {
         self.memory = memory
@@ -27,12 +28,13 @@ final class Machine {
         clock.reset()
     }
 
-    /// Advances the machine by a single instruction step.
-    ///
-    /// Milestone 2 performs only an instruction *fetch*; decoding and execution
-    /// will be layered in behind this same entry point in later milestones.
+    /// Advances the machine by a single instruction: fetch → decode → execute,
+    /// then charges the instruction's clock cost to the execution clock.
     func step() {
-        cpu.fetch()
+        let opcode = cpu.fetch()
+        let instruction = decoder.decode(opcode: opcode, nextByte: cpu.fetch)
+        let cycles = cpu.execute(instruction)
+        clock.advance(by: cycles)
     }
 
     func tick() {

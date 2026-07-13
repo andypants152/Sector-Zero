@@ -12,7 +12,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 ## Handoff context (read first)
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
-decoder) are complete and tested. The next milestones are M4–M8 below.
+decoder), and M4 (execute NOP) are complete and tested. The next milestones are
+M5–M8 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -84,15 +85,13 @@ decoded today invokes it (tests enforce this across all 256 opcodes).
 
 ## Next milestones
 
-### M4 — Execute NOP (0x90)
-- **Goal:** First execution; establish the execute stage and cycle accounting.
-- **Build:** A `fetch → decode → execute` path behind `Machine.step()`. Executing
-  `.nop` leaves CPU state unchanged (IP already consumed by fetch) and adds NOP's
-  documented cost to the cycle counter (**3 clocks** on the 8086 — verify). Wire
-  `ExecutionClock` into execution.
-- **Don't:** Implement any other opcode's execution.
-- **Tests:** after NOP, IP advanced by 1, cycles += 3, all registers/flags unchanged;
-  decide and test the `.unknown` policy (e.g. no-op-and-advance, or a trap flag).
+### M4 — Execute NOP (0x90) ✅
+`Machine.step()` now runs fetch → decode → execute and charges the instruction's
+clock cost via `ExecutionClock.advance(by:)`. `CPU8086.execute(_:)` returns each
+instruction's cycle cost; NOP is 3 clocks and mutates nothing beyond the fetch's IP
+advance. **Unknown-opcode policy: no-op-and-advance** at the same provisional
+3-clock cost (never wedges; a trap can replace this once interrupts exist). HLT
+decodes but is executed as a no-op until M5 gives it a run-state.
 
 ### M5 — HLT (0xF4) + CPU run-state
 - **Goal:** Give the CPU a halted state so a run loop can terminate.

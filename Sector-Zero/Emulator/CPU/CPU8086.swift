@@ -69,6 +69,27 @@ final class CPU8086 {
         return opcode
     }
 
+    /// Executes one decoded instruction and returns its cost in clock cycles.
+    ///
+    /// NOP costs 3 clocks on the 8086 and changes no state — the fetch already
+    /// advanced IP past it. Unknown opcodes follow a no-op-and-advance policy
+    /// (executed like NOP, at the same provisional 3-clock cost) so stepping
+    /// through unimplemented code never wedges the machine; a trap mechanism
+    /// can replace this once interrupts exist. HLT decodes but does not halt
+    /// yet — the halted run-state lands in milestone 5.
+    func execute(_ instruction: Instruction) -> Int {
+        switch instruction {
+        case .nop:
+            return 3
+        case .hlt:
+            // Milestone 5 gives HLT its halted run-state; until then it is
+            // treated like an unknown opcode.
+            return 3
+        case .unknown:
+            return 3
+        }
+    }
+
     func dumpState() -> CPUStateSnapshot {
         CPUStateSnapshot(
             ax: ax,
