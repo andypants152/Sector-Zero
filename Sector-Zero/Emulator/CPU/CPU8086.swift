@@ -344,6 +344,19 @@ final class CPU8086 {
             registers[.ah] = 0
             flags.applySignZeroParity(registers[.al])
             return 60
+        case .convertByteToWord:
+            registers[.ah] = registers[.al] & 0x80 == 0 ? 0x00 : 0xFF
+            return 2
+        case .convertWordToDoubleword:
+            registers[.dx] = registers[.ax] & 0x8000 == 0 ? 0x0000 : 0xFFFF
+            return 5
+        case .translateByte:
+            // XLAT's unsigned AL index wraps with BX in the 16-bit offset
+            // domain. Its implicit DS data operand honors segment override.
+            let offset = registers[.bx] &+ UInt16(registers[.al])
+            let address = resolved(EffectiveAddress(offset: offset, defaultSegment: .ds))
+            registers[.al] = bus.readByte(at: physicalAddress(of: address))
+            return 11
         case .shiftRotate8(let operation, let destination, let countSource, let eaClocks):
             let count: UInt8 = countSource == .one ? 1 : registers[.cl]
             let outcome = ALU.shiftRotate8(

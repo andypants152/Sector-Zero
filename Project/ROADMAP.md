@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M36 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M37 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -19,8 +19,8 @@ JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
-CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII
-adjust). The next milestone is M37 below.
+CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
+sign extension and XLAT). The next milestone is M38 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment and
@@ -478,13 +478,17 @@ matrix introduced in M39 is the CPU-completion gate.
   intact and the following IP in the interrupt frame. Timings are 4 clocks for
   DAA/DAS/AAA/AAS, 83 for AAM, and 60 for AAD.
 
-### M37 — Sign extension, XLAT, and translation helpers (0x98–0x99, 0xD7)
+### M37 — Sign extension, XLAT, and translation helpers (0x98–0x99, 0xD7) ✅
 - **Goal:** Finish the small but common data-conversion instructions.
 - **Build:** CBW sign-extends AL into AX; CWD sign-extends AX into DX:AX; XLAT
   loads AL from DS:[BX+unsigned AL], subject to segment override. No flags.
 - **Don't:** Add 386-size variants.
 - **Tests:** Positive/negative/boundary values, XLAT address wrap and segment
   override, flags untouched, and exact clocks.
+- **Completed:** CBW sign-extends AL into AH in 2 clocks; CWD sign-extends AX
+  into DX in 5 clocks. XLAT adds unsigned AL to BX with 16-bit offset wrap,
+  reads through the override-aware DS data path, and costs 11 clocks. All three
+  leave FLAGS unchanged.
 
 ### M38 — Port I/O bus and IN/OUT (0xE4–0xE7, 0xEC–0xEF)
 - **Goal:** Create the CPU↔device boundary required by PC-compatible hardware.

@@ -67,6 +67,9 @@ enum Instruction: Equatable {
     case asciiAdjustAfterSubtraction
     case asciiAdjustAfterMultiply(base: UInt8)
     case asciiAdjustBeforeDivision(base: UInt8)
+    case convertByteToWord
+    case convertWordToDoubleword
+    case translateByte
     case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case testImmediateRM8(destination: ModRMOperand, immediate: UInt8, eaClocks: Int)

@@ -381,6 +381,12 @@ struct InstructionDecoder {
             return .asciiAdjustAfterMultiply(base: nextByte())
         case 0xD5:
             return .asciiAdjustBeforeDivision(base: nextByte())
+        case 0x98:
+            return .convertByteToWord
+        case 0x99:
+            return .convertWordToDoubleword
+        case 0xD7:
+            return .translateByte
         case 0xF8:
             return .clearFlag(.carry)
         case 0xF9:
