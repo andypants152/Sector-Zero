@@ -12,8 +12,9 @@ This document is a handoff brief so another contributor (human or AI) can take o
 ## Handoff context (read first)
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
-decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), and M7
-(MOV immediate → register) are complete and tested. The next milestone is M8 below.
+decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
+(MOV immediate → register), and M8 (ModR/M decoding) are complete and tested.
+All milestones in this batch are done — see "Beyond M8" for what's next.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -116,21 +117,15 @@ directly. Execution writes through the register file, affects no flags, and cost
 4 clocks. All 16 encodings are covered by tests, including IP advancing by full
 instruction length. ModR/M forms are deliberately absent — that's M8.
 
-### M8 — ModR/M byte decoding + effective address
-- **Goal:** The reusable operand-addressing machinery that unlocks most of the
-  instruction set (MOV r/m, ADD, SUB, CMP, …).
-- **Build:** A clean ModR/M decoder: extract `mod`, `reg`, `r/m`; resolve register
-  operands and all memory addressing modes; fetch displacement bytes (8/16-bit) per
-  `mod`; compute the effective address and its default segment (BP-based modes
-  default to SS). Represent results as a value type (e.g.
-  `Operand.register(...)` / `Operand.memory(segment:offset:)`). Keep it a standalone,
-  heavily-tested unit.
-- **Don't:** Implement the arithmetic/logic instructions that consume it yet — just
-  decode + address calculation. Segment-override prefixes can be a follow-up.
-- **Tests:** table-driven across every `mod`/`r/m` combination — register direct
-  (mod=11), memory forms with 0/8/16-bit displacement, the direct-address special
-  case (mod=00, r/m=110), and BP defaulting to SS. Assert computed effective address
-  and consumed instruction length for known byte sequences.
+### M8 — ModR/M byte decoding + effective address ✅
+`ModRMDecoder.decode(modRMByte:registers:nextByte:)` is a pure, standalone unit
+returning a value-type `ModRM` (raw `mod`/`reg` fields + a resolved
+`ModRMOperand`: `.register(encoding)` or `.memory(EffectiveAddress)` with the
+displacement folded in and the default segment recorded — SS for BP-based modes,
+DS otherwise). Handles all mod=00/01/10/11 forms, sign-extended disp8,
+little-endian disp16, the mod=00 r/m=110 direct-address special case, and 16-bit
+EA wraparound. Table-driven tests cover every mod/r/m combination and consumed
+length. Nothing consumes it yet; segment-override prefixes remain a follow-up.
 
 ---
 
