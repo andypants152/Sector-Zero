@@ -274,6 +274,9 @@ final class CPU8086 {
         switch op {
         case .add: return ALU.add8(a, b)
         case .sub, .cmp: return ALU.subtract8(a, b)
+        case .and: return ALU.and8(a, b)
+        case .or: return ALU.or8(a, b)
+        case .xor: return ALU.xor8(a, b)
         }
     }
 
@@ -281,6 +284,9 @@ final class CPU8086 {
         switch op {
         case .add: return ALU.add16(a, b)
         case .sub, .cmp: return ALU.subtract16(a, b)
+        case .and: return ALU.and16(a, b)
+        case .or: return ALU.or16(a, b)
+        case .xor: return ALU.xor16(a, b)
         }
     }
 

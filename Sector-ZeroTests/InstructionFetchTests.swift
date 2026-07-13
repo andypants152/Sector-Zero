@@ -97,8 +97,11 @@ struct InstructionFetchTests {
 
     @Test("Opcode text is formatted as two hex digits")
     func opcodeTextFormatting() {
+        // A low opcode byte exercises the leading-zero hex formatting. Drive a
+        // bare fetch (not step) so the assertion is about the fetched byte, not
+        // whatever operand a decode might pull next.
         let machine = machineWithOpcodes([0x0A])
-        machine.step()
+        machine.cpu.fetch()
         #expect(machine.snapshot().cpu.lastFetchedOpcodeText == "0A")
     }
 }

@@ -101,8 +101,12 @@ enum ALUBinaryOp: Equatable, Sendable {
     case add
     case sub
     case cmp
+    case and
+    case or
+    case xor
 
     /// Whether the operation writes its result back to the destination.
+    /// Only CMP discards its result (TEST, added later, shares this trait).
     var writesResult: Bool {
         self != .cmp
     }

@@ -12,13 +12,16 @@ struct InstructionDecoder {
 
     func decode(opcode: UInt8, registers: RegisterFile, nextByte: () -> UInt8) -> Instruction {
         switch opcode {
-        case 0x00...0x03, 0x28...0x2B, 0x38...0x3B:
-            // ALU r/m ↔ reg blocks (ADD/SUB/CMP), same width/direction bit
-            // layout as MOV below; bits 5–3 of the opcode name the operation.
+        case 0x00...0x03, 0x08...0x0B, 0x20...0x23, 0x28...0x2B, 0x30...0x33, 0x38...0x3B:
+            // ALU r/m ↔ reg blocks, same width/direction bit layout as MOV
+            // below; bits 5–3 of the opcode name the operation.
             let op: ALUBinaryOp
             switch opcode >> 3 {
             case 0b00000: op = .add
+            case 0b00001: op = .or
+            case 0b00100: op = .and
             case 0b00101: op = .sub
+            case 0b00110: op = .xor
             default:      op = .cmp
             }
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
@@ -64,9 +67,12 @@ struct InstructionDecoder {
             let op: ALUBinaryOp?
             switch modRM.reg {
             case 0b000: op = .add
+            case 0b001: op = .or
+            case 0b100: op = .and
             case 0b101: op = .sub
+            case 0b110: op = .xor
             case 0b111: op = .cmp
-            default:    op = nil // OR/ADC/SBB/AND/XOR — later milestones
+            default:    op = nil // ADC (/2), SBB (/3) — M24
             }
             if opcode == 0x80 {
                 let immediate = nextByte()

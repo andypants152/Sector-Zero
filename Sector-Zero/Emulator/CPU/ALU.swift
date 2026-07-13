@@ -73,6 +73,60 @@ enum ALU {
         return (result, flags)
     }
 
+    static func and8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
+        let result = a & b
+        return (result, logicalFlags8(result))
+    }
+
+    static func and16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
+        let result = a & b
+        return (result, logicalFlags16(result))
+    }
+
+    static func or8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
+        let result = a | b
+        return (result, logicalFlags8(result))
+    }
+
+    static func or16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
+        let result = a | b
+        return (result, logicalFlags16(result))
+    }
+
+    static func xor8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
+        let result = a ^ b
+        return (result, logicalFlags8(result))
+    }
+
+    static func xor16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
+        let result = a ^ b
+        return (result, logicalFlags16(result))
+    }
+
+    /// Logical ops clear CF and OF, derive ZF/SF/PF from the result, and leave
+    /// AF architecturally undefined on the 8086 — we clear it deterministically.
+    private static func logicalFlags8(_ result: UInt8) -> ArithmeticFlags {
+        ArithmeticFlags(
+            carry: false,
+            parity: hasEvenParity(result),
+            auxiliaryCarry: false,
+            zero: result == 0,
+            sign: result & 0x80 != 0,
+            overflow: false
+        )
+    }
+
+    private static func logicalFlags16(_ result: UInt16) -> ArithmeticFlags {
+        ArithmeticFlags(
+            carry: false,
+            parity: hasEvenParity(UInt8(truncatingIfNeeded: result)),
+            auxiliaryCarry: false,
+            zero: result == 0,
+            sign: result & 0x8000 != 0,
+            overflow: false
+        )
+    }
+
     private static func hasEvenParity(_ byte: UInt8) -> Bool {
         byte.nonzeroBitCount.isMultiple(of: 2)
     }

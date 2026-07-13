@@ -11,10 +11,10 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M18 are complete and tested (reset, fetch, decode, execute loop;
-register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; conditional
-jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far). The next
-milestone is M19 below.
+**Status:** M1–M19 are complete and tested (reset, fetch, decode, execute loop;
+register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; AND/OR/XOR;
+conditional jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far).
+The next milestone is M20 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -202,19 +202,17 @@ handoff shape (far jump from the reset segment down to low memory).
 
 ## Next milestones (M19–M26)
 
-### M19 — Logical ALU: AND/OR/XOR (0x08–0x0B, 0x20–0x23, 0x30–0x33)
-- **Goal:** The bitwise half of the ALU, reusing the M10/M11 machinery.
-- **Build:** Extend `ALUBinaryOp` with `.and`/`.or`/`.xor` and add pure
-  `ALU.and/or/xor` (8/16). Flag rule for logicals: **CF = OF = 0**, ZF/SF/PF
-  from the result, AF undefined (leave it cleared and note it). Wire the three
-  r/m↔reg opcode blocks through the existing shared decoder path, and enable
-  /1 OR, /4 AND, /6 XOR in the `80`/`81`/`83` immediate group. Same cycle
-  table as ADD.
-- **Don't:** TEST and NOT (different shapes — M20/M25); accumulator-immediate
-  shortcut forms (M20).
-- **Tests:** truth-table spot checks per op/width, CF/OF forced set then
-  cleared by a logical, immediate-group parity with register forms, XOR
-  reg,reg as the idiomatic zeroing (ZF set).
+### M19 — Logical ALU: AND/OR/XOR (0x08–0x0B, 0x20–0x23, 0x30–0x33) ✅
+`ALUBinaryOp` gains `.and`/`.or`/`.xor`; pure `ALU.and/or/xor` (8/16) share
+a `logicalFlags8/16` helper: **CF = OF = 0**, ZF/SF/PF from the result, AF
+cleared deterministically (undefined on real silicon). The three r/m↔reg
+blocks join the existing shared decoder path (op selector by `opcode >> 3`),
+and /1 OR, /4 AND, /6 XOR are enabled in the `80`/`81`/`83` immediate group.
+No execution changes beyond `perform8/16` — cycle table matches ADD. Tested:
+per-op truth tables, XOR reg,reg zeroing, a logical clearing set CF/OF/AF,
+immediate-group parity with register forms, and a memory destination.
+Note: the opcode-formatting fetch test moved off `step()` onto a bare
+`fetch()` now that low opcodes like `0A` pull operands.
 
 ### M20 — TEST + accumulator-immediate shortcuts (0x84/0x85, 0xA8/0xA9, 0x04/0x05, 0x0C/0x0D, 0x24/0x25, 0x2C/0x2D, 0x34/0x35, 0x3C/0x3D)
 - **Goal:** TEST (AND that only sets flags) and the one-byte-shorter
