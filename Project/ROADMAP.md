@@ -12,8 +12,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 ## Handoff context (read first)
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
-decoder), M4 (execute NOP), M5 (HLT + run-state), and M6 (register file) are
-complete and tested. The next milestones are M7–M8 below.
+decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), and M7
+(MOV immediate → register) are complete and tested. The next milestone is M8 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -108,18 +108,13 @@ order (AX,CX,DX,BX,SP,BP,SI,DI / AL,CL,DL,BL,AH,CH,DH,BH) so the decoder can map
 encodings directly later. `CPU8086` GP registers are now computed views over the
 file. No new instructions.
 
-### M7 — MOV immediate → register (0xB0–0xBF)
-- **Goal:** First data movement; exercises immediate-operand fetch and register
-  writes end-to-end.
-- **Build:** Decode `0xB0–0xB7` (MOV reg8, imm8) and `0xB8–0xBF` (MOV reg16, imm16),
-  fetching the 1- or 2-byte immediate from the stream (little-endian for imm16),
-  writing via the M6 register file. Extend `Instruction` with a
-  `.movImmediateToRegister` case carrying target register + value. Add documented
-  cycles (**~4 clocks**, register — verify). IP advances past opcode + immediate.
-- **Don't:** Implement ModR/M (register/memory MOVs) — that's M8.
-- **Tests:** `B0 42` → AL=0x42; `BB 34 12` → BX=0x1234 (endianness!); IP advances by
-  instruction length; flags untouched (MOV affects no flags); all 16 register
-  encodings map correctly.
+### M7 — MOV immediate → register (0xB0–0xBF) ✅
+Decoder maps `0xB0–0xB7` → `.movImmediateToRegister8` and `0xB8–0xBF` →
+`.movImmediateToRegister16`, pulling the immediate through `nextByte`
+(little-endian for imm16); the low three opcode bits index the register enums
+directly. Execution writes through the register file, affects no flags, and costs
+4 clocks. All 16 encodings are covered by tests, including IP advancing by full
+instruction length. ModR/M forms are deliberately absent — that's M8.
 
 ### M8 — ModR/M byte decoding + effective address
 - **Goal:** The reusable operand-addressing machinery that unlocks most of the
@@ -146,7 +141,12 @@ conditional jumps → stack ops (PUSH/POP/CALL/RET) → interrupts → BIOS → 
 The long arc from the project charter stays intact:
 
 ```
-CPU → Memory → Interrupts → Devices → BIOS → Boot sector → MS-DOS 4.0
+CPU → Memory → Interrupts → Devices → BIOS → Boot sector → MS-DOS 2.0 → MS-DOS 4.0
 ```
+
+MS-DOS 2.0 boots first as a stepping stone: it's MIT-licensed like 4.0, needs far
+less of the machine to come up, and its source is small enough to read alongside a
+debugger when boot goes wrong. 4.0 (also MIT, so bundleable in an App Store build)
+remains the shipping target.
 
 Do not attempt to boot anything until the CPU core is trustworthy.

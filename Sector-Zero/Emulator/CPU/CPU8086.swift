@@ -86,6 +86,13 @@ final class CPU8086 {
         case .hlt:
             halted = true
             return 2
+        case .movImmediateToRegister8(let register, let value):
+            // MOV affects no flags; immediate-to-register costs 4 clocks.
+            registers[register] = value
+            return 4
+        case .movImmediateToRegister16(let register, let value):
+            registers[register] = value
+            return 4
         case .unknown:
             return 3
         }

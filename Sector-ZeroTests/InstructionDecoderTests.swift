@@ -31,15 +31,16 @@ struct InstructionDecoderTests {
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x00), 0x0F, 0x42, 0x8B, 0x91, 0xB8, 0xF3, 0xF5, 0xFF,
+        UInt8(0x00), 0x0F, 0x42, 0x8B, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
     ])
     func decodesUnknown(opcode: UInt8) {
         #expect(decoder.decode(opcode: opcode, nextByte: forbiddenReader()) == .unknown(opcode))
     }
 
-    @Test("Every opcode decodes without consuming operand bytes")
+    @Test("Opcodes without operands decode without consuming bytes")
     func decodingConsumesNoOperandBytes() {
-        for opcode in UInt8.min...UInt8.max {
+        // 0xB0–0xBF (MOV reg, imm) legitimately pull immediate bytes.
+        for opcode in UInt8.min...UInt8.max where !(0xB0...0xBF).contains(opcode) {
             _ = decoder.decode(opcode: opcode, nextByte: forbiddenReader())
         }
     }
@@ -57,11 +58,13 @@ struct InstructionDecoderTests {
         #expect(after.cycleCount == before.cycleCount)
     }
 
-    @Test("Decoding the same opcode twice yields the same instruction")
+    @Test("Decoding the same byte sequence twice yields the same instruction")
     func decodingIsDeterministic() {
         for opcode in UInt8.min...UInt8.max {
-            let first = decoder.decode(opcode: opcode, nextByte: forbiddenReader())
-            let second = decoder.decode(opcode: opcode, nextByte: forbiddenReader())
+            var firstStream: [UInt8] = [0x34, 0x12]
+            var secondStream: [UInt8] = [0x34, 0x12]
+            let first = decoder.decode(opcode: opcode) { firstStream.removeFirst() }
+            let second = decoder.decode(opcode: opcode) { secondStream.removeFirst() }
             #expect(first == second)
         }
     }

@@ -9,5 +9,7 @@ import Foundation
 enum Instruction: Equatable {
     case nop
     case hlt
+    case movImmediateToRegister8(Register8, UInt8)
+    case movImmediateToRegister16(Register16, UInt16)
     case unknown(UInt8)
 }
