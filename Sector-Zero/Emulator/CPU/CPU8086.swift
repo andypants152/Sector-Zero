@@ -4,14 +4,18 @@ final class CPU8086 {
     // The CPU only talks to memory and devices through this bus boundary.
     private let bus: Bus
 
-    private(set) var ax: UInt16 = 0
-    private(set) var bx: UInt16 = 0
-    private(set) var cx: UInt16 = 0
-    private(set) var dx: UInt16 = 0
-    private(set) var si: UInt16 = 0
-    private(set) var di: UInt16 = 0
-    private(set) var sp: UInt16 = 0
-    private(set) var bp: UInt16 = 0
+    /// General-purpose register storage, addressable as words or byte halves.
+    private(set) var registers = RegisterFile()
+
+    var ax: UInt16 { registers[.ax] }
+    var bx: UInt16 { registers[.bx] }
+    var cx: UInt16 { registers[.cx] }
+    var dx: UInt16 { registers[.dx] }
+    var si: UInt16 { registers[.si] }
+    var di: UInt16 { registers[.di] }
+    var sp: UInt16 { registers[.sp] }
+    var bp: UInt16 { registers[.bp] }
+
     private(set) var cs: UInt16 = 0
     private(set) var ds: UInt16 = 0
     private(set) var es: UInt16 = 0
@@ -41,14 +45,7 @@ final class CPU8086 {
     /// hard-wired). The general-purpose registers are architecturally undefined at
     /// reset on real hardware; we zero them for deterministic, testable behaviour.
     func reset() {
-        ax = 0
-        bx = 0
-        cx = 0
-        dx = 0
-        si = 0
-        di = 0
-        sp = 0
-        bp = 0
+        registers.reset()
         cs = 0xFFFF
         ds = 0
         es = 0

@@ -12,8 +12,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 ## Handoff context (read first)
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
-decoder), M4 (execute NOP), and M5 (HLT + run-state) are complete and tested. The
-next milestones are M6–M8 below.
+decoder), M4 (execute NOP), M5 (HLT + run-state), and M6 (register file) are
+complete and tested. The next milestones are M7–M8 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -101,17 +101,12 @@ only exit until interrupt-driven wake-from-halt exists. `halted` is surfaced in
 steps until halt or the bound. A UI RUN control is still to be wired when the
 workspace grows one.
 
-### M6 — Register file with byte + word access
-- **Goal:** Foundational operand storage — AX is AH:AL, etc. Nearly every future
-  instruction needs both 8-bit and 16-bit register access.
-- **Build:** A `RegisterFile` exposing word registers (AX,BX,CX,DX,SI,DI,SP,BP) and
-  their byte halves (AL/AH, BL/BH, CL/CH, DL/DH) with correct high/low mapping.
-  Refactor `CPU8086` to back its GP registers with it. Consider `Register8` /
-  `Register16` operand enums for the decoder to use later.
-- **Don't:** Add new instructions (this is internal machinery).
-- **Tests:** writing AL/AH composes AX correctly and vice-versa (for BX/CX/DX too);
-  word writes don't disturb unrelated registers; reset zeroes all; byte↔word
-  round-trip invariants.
+### M6 — Register file with byte + word access ✅
+`RegisterFile` (a value type) stores the eight GP word registers with subscript
+access by `Register16` or `Register8`; the byte enums use the 8086 `reg` encoding
+order (AX,CX,DX,BX,SP,BP,SI,DI / AL,CL,DL,BL,AH,CH,DH,BH) so the decoder can map
+encodings directly later. `CPU8086` GP registers are now computed views over the
+file. No new instructions.
 
 ### M7 — MOV immediate → register (0xB0–0xBF)
 - **Goal:** First data movement; exercises immediate-operand fetch and register
