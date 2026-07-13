@@ -11,14 +11,14 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M30 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M31 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
-indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES). The
-next milestone is M31 below.
+indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
+MOVS/LODS/STOS). The next milestone is M32 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -393,7 +393,7 @@ matrix introduced in M39 is the CPU-completion gate.
   spying bus, little-endian far pointers, segment override for LDS/LES, and
   atomic destination updates.
 
-### M31 — String data movement: MOVS/LODS/STOS (0xA4–0xA5, 0xAA–0xAD)
+### M31 — String data movement: MOVS/LODS/STOS (0xA4–0xA5, 0xAA–0xAD) ✅
 - **Goal:** Establish one-iteration string semantics and make DF operational.
 - **Build:** Byte/word MOVS, LODS, and STOS. Source is DS:SI (subject to segment
   override); destination is always ES:DI and never overridden. Advance or

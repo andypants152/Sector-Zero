@@ -175,6 +175,42 @@ final class CPU8086 {
             case (true, true):   writeMemoryWord(registers[.ax], at: address)
             }
             return 10
+        case .moveString(let isWord):
+            // The source is overrideable DS:SI; the destination is always
+            // ES:DI. Read before writing so overlapping strings have the
+            // architectural one-iteration ordering.
+            let source = resolved(EffectiveAddress(offset: registers[.si], defaultSegment: .ds))
+            let destination = EffectiveAddress(offset: registers[.di], defaultSegment: .es)
+            if isWord {
+                writeMemoryWord(readMemoryWord(at: source), at: destination)
+            } else {
+                let value = bus.readByte(at: physicalAddress(of: source))
+                bus.writeByte(value, at: physicalAddress(of: destination))
+            }
+            adjustStringIndex(.si, isWord: isWord)
+            adjustStringIndex(.di, isWord: isWord)
+            return 18
+        case .loadString(let isWord):
+            // LODS reads from overrideable DS:SI into AL/AX.
+            let source = resolved(EffectiveAddress(offset: registers[.si], defaultSegment: .ds))
+            if isWord {
+                registers[.ax] = readMemoryWord(at: source)
+            } else {
+                registers[.al] = bus.readByte(at: physicalAddress(of: source))
+            }
+            adjustStringIndex(.si, isWord: isWord)
+            return 12
+        case .storeString(let isWord):
+            // STOS always writes AL/AX to ES:DI; a segment prefix cannot
+            // redirect its implicit destination.
+            let destination = EffectiveAddress(offset: registers[.di], defaultSegment: .es)
+            if isWord {
+                writeMemoryWord(registers[.ax], at: destination)
+            } else {
+                bus.writeByte(registers[.al], at: physicalAddress(of: destination))
+            }
+            adjustStringIndex(.di, isWord: isWord)
+            return 11
         case .exchangeRM8(let register, let rm, let eaClocks):
             // XCHG swaps the two operands; no flags. reg↔reg 4, mem 17+EA.
             let temp = registers[register]
@@ -498,6 +534,15 @@ final class CPU8086 {
         let value = readMemoryWord(at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
         registers[.sp] = registers[.sp] &+ 2
         return value
+    }
+
+    /// Advances an implicit string index by the operand width, or retreats it
+    /// when DF is set. Original 8086 arithmetic wraps within 16 bits.
+    private func adjustStringIndex(_ register: Register16, isWord: Bool) {
+        let amount: UInt16 = isWord ? 2 : 1
+        registers[register] = flags[.direction]
+            ? registers[register] &- amount
+            : registers[register] &+ amount
     }
 
     private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {

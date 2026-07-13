@@ -19,6 +19,9 @@ enum Instruction: Equatable {
     case movImmediateToRM16(destination: ModRMOperand, value: UInt16, eaClocks: Int)
     /// MOV between AL/AX and a direct-address offset (DS-relative), 0xA0–0xA3.
     case movMemoryOffset(offset: UInt16, isWord: Bool, store: Bool)
+    case moveString(isWord: Bool)
+    case loadString(isWord: Bool)
+    case storeString(isWord: Bool)
     case exchangeRM8(register: Register8, rm: ModRMOperand, eaClocks: Int)
     case exchangeRM16(register: Register16, rm: ModRMOperand, eaClocks: Int)
     case exchangeAXWithRegister(Register16)
