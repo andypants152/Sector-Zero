@@ -11,6 +11,7 @@ struct ProjectBrowserView: View {
 
     @State private var isShowingNewProject = false
     @State private var isImportingProject = false
+    @State private var isImportingFirmware = false
     @State private var projectPendingDeletion: RecentProject?
 
     var body: some View {
@@ -100,6 +101,7 @@ struct ProjectBrowserView: View {
                         .foregroundStyle(Color.sectorMutedText)
                         .lineLimit(2)
                 }
+                firmwareRow(for: project)
             } else {
                 Text("No machine open")
                     .font(.system(size: 13))
@@ -156,6 +158,79 @@ struct ProjectBrowserView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func firmwareRow(for project: SectorZeroProject) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("FIRMWARE")
+                    .font(.sectorMono(10, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.sectorMutedText)
+                Text(project.configuredFirmwareURL?.lastPathComponent ?? "None installed")
+                    .font(.sectorMono(11, weight: .regular))
+                    .foregroundStyle(project.configuredFirmwareURL == nil ? Color.sectorAccent : Color.sectorText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                chooseFirmware()
+            } label: {
+                Label("Choose", systemImage: "memorychip")
+            }
+            .controlSize(.small)
+            .disabled(workspace.isRunning)
+            .help("Install a ROM image (1–64 KiB, loaded at the top of the F0000h segment)")
+            .accessibilityIdentifier("chooseFirmwareButton")
+        }
+        .padding(.top, 2)
+        .fileImporter(
+            isPresented: $isImportingFirmware,
+            allowedContentTypes: [.data, .item],
+            allowsMultipleSelection: false
+        ) { result in
+            openImportedFirmware(result)
+        }
+    }
+
+    private func chooseFirmware() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Firmware Image"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        workspace.configureFirmware(from: url)
+        #else
+        isImportingFirmware = true
+        #endif
+    }
+
+    private func openImportedFirmware(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                return
+            }
+
+            let didStartAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            workspace.configureFirmware(from: url)
+        case .failure(let error):
+            workspace.errorMessage = error.localizedDescription
         }
     }
 

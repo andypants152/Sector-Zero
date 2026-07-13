@@ -55,10 +55,37 @@ struct CPUInspectorView: View {
             valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip))
             valueRow(name: "PHYS", value: String(format: "%05X", state.physicalCodeAddress))
             valueRow(name: "OPC", value: cpu.lastFetchedOpcodeText)
-            valueRow(name: "STATE", value: cpu.fault == nil
-                ? (cpu.halted ? "HALT" : (cpu.waitingForCoprocessor ? "WAIT" : "RUN"))
-                : "FAULT")
+            stateRow
         }
+    }
+
+    private var stateRow: some View {
+        HStack(spacing: 8) {
+            Text("STATE")
+                .font(.sectorMono(11, weight: .semibold))
+                .foregroundStyle(Color.sectorMutedText)
+                .frame(width: 42, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            Text(stateText)
+                .font(.sectorMono(12, weight: .semibold))
+                .foregroundStyle(Color.sectorStatus(stateSeverity))
+                .textSelection(.enabled)
+        }
+    }
+
+    private var stateText: String {
+        if cpu.fault != nil { return "FAULT" }
+        if cpu.halted { return "HALT" }
+        if cpu.waitingForCoprocessor { return "WAIT" }
+        return "RUN"
+    }
+
+    private var stateSeverity: MachineCondition.Severity {
+        if cpu.fault != nil { return .fault }
+        if cpu.halted || cpu.waitingForCoprocessor { return .held }
+        return .live
     }
 
     private func valueRow(name: String, value: String) -> some View {

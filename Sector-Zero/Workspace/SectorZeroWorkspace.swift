@@ -18,6 +18,25 @@ private final class MachineRunControl: @unchecked Sendable {
     }
 }
 
+/// A display-ready summary of the machine's condition, derived from run
+/// state, the latest snapshot, and the last stop reason. Views map the
+/// severity to a status hue; the label is shown verbatim.
+struct MachineCondition: Equatable, Sendable {
+    enum Severity: Equatable, Sendable {
+        /// Executing instructions right now.
+        case live
+        /// Idle with nothing notable to report.
+        case ready
+        /// Stopped on purpose or awaiting something (pause, HLT, WAIT).
+        case held
+        /// Stopped in error.
+        case fault
+    }
+
+    let label: String
+    let severity: Severity
+}
+
 @MainActor
 @Observable
 final class SectorZeroWorkspace {
@@ -62,6 +81,70 @@ final class SectorZeroWorkspace {
 
     var runButtonTitle: String {
         isRunning ? "PAUSE" : "RUN"
+    }
+
+    /// A fault always wins over the halted flag it sets alongside itself, so
+    /// an unsupported opcode reads FAULT rather than HALT.
+    var machineCondition: MachineCondition {
+        if isRunning {
+            return MachineCondition(label: "RUNNING", severity: .live)
+        }
+        if machineSnapshot.cpu.fault != nil {
+            return MachineCondition(label: "FAULT", severity: .fault)
+        }
+        if case .memoryMapViolation = lastRunStopReason {
+            return MachineCondition(label: "FAULT", severity: .fault)
+        }
+        if machineSnapshot.cpu.halted {
+            return MachineCondition(label: "HALT", severity: .held)
+        }
+        if machineSnapshot.cpu.waitingForCoprocessor {
+            return MachineCondition(label: "WAIT", severity: .held)
+        }
+        if lastRunStopReason == .paused {
+            return MachineCondition(label: "PAUSED", severity: .held)
+        }
+        if machineSnapshot.loadedSystemROMByteCount == 0 {
+            return MachineCondition(label: "NO ROM", severity: .held)
+        }
+        return MachineCondition(label: "READY", severity: .ready)
+    }
+
+    /// One line explaining why the machine is not simply ready, or nil when
+    /// there is nothing to report. Faults are described from the snapshot so
+    /// a single STEP into a fault is explained the same way as a full run.
+    var machineConditionDetail: String? {
+        if let fault = machineSnapshot.cpu.fault {
+            return "Fault: \(Self.describe(fault))"
+        }
+        switch lastRunStopReason {
+        case .paused:
+            return "Paused at instruction boundary"
+        case .halted:
+            return "CPU halted"
+        case .waitingForCoprocessor:
+            return "Waiting for coprocessor"
+        case .memoryMapViolation:
+            return "Stopped by memory map violation"
+        case .fault(let fault):
+            return "Fault: \(Self.describe(fault))"
+        case .instructionLimit, nil:
+            if machineSnapshot.loadedSystemROMByteCount == 0 {
+                return "No firmware loaded — the machine has nothing to execute"
+            }
+            return nil
+        }
+    }
+
+    private static func describe(_ fault: CPUFault) -> String {
+        switch fault {
+        case .divideError:
+            return "divide error"
+        case .unsupportedOpcode(let opcode):
+            return String(format: "unsupported opcode %02X", opcode)
+        case .invalidLockPrefix:
+            return "invalid LOCK prefix"
+        }
     }
 
     func toggleRunPause() {
@@ -110,6 +193,36 @@ final class SectorZeroWorkspace {
         machine.reset()
         lastRunStopReason = nil
         apply(machine.snapshot())
+    }
+
+    /// Validates and loads a firmware image, installs it into the current
+    /// machine package, and resets to power-on state so the new ROM's reset
+    /// vector is what runs next. Validation happens before anything is
+    /// persisted, so a rejected image leaves the package untouched.
+    @discardableResult
+    func configureFirmware(from sourceURL: URL) -> Bool {
+        guard !isRunning else { return false }
+        guard let project = currentProject else {
+            errorMessage = "Open a machine before choosing firmware."
+            return false
+        }
+        do {
+            let image = try Data(contentsOf: sourceURL)
+            try machine.loadSystemROM(image)
+            machine.reset()
+            currentProject = try SectorZeroProjectStore.installFirmware(
+                image,
+                named: sourceURL.lastPathComponent,
+                into: project
+            )
+            lastRunStopReason = nil
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     private func publish(_ result: MachineRunSlice, for runID: UUID) {

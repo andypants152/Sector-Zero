@@ -82,6 +82,28 @@ enum SectorZeroProjectStore {
         return project
     }
 
+    /// Writes a firmware image into the package's firmware folder, records
+    /// the package-relative path in metadata, and persists it. An existing
+    /// image with the same name is replaced. Returns the updated project.
+    static func installFirmware(
+        _ image: Data,
+        named rawFileName: String,
+        into project: SectorZeroProject
+    ) throws -> SectorZeroProject {
+        let fileName = sanitizedFirmwareFileName(for: rawFileName)
+        try FileManager.default.createDirectory(
+            at: project.firmwareFolderURL,
+            withIntermediateDirectories: true
+        )
+        let destinationURL = project.firmwareFolderURL.appendingPathComponent(fileName, isDirectory: false)
+        try image.write(to: destinationURL, options: [.atomic])
+
+        var updated = project
+        updated.metadata.firmwarePath = "firmware/\(fileName)"
+        try save(updated)
+        return updated
+    }
+
     static func save(_ project: SectorZeroProject) throws {
         let metadataURL = project.projectURL.appendingPathComponent(metadataFileName, isDirectory: false)
         let data = try encoder.encode(project)
@@ -112,6 +134,13 @@ enum SectorZeroProjectStore {
         let components = projectName.components(separatedBy: invalidCharacters)
         let sanitized = components.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
         return sanitized.isEmpty ? "Untitled" : sanitized
+    }
+
+    private static func sanitizedFirmwareFileName(for rawFileName: String) -> String {
+        let invalidCharacters = CharacterSet(charactersIn: "/:").union(.newlines).union(.controlCharacters)
+        let components = rawFileName.components(separatedBy: invalidCharacters)
+        let sanitized = components.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "firmware.bin" : sanitized
     }
 
     private static let encoder: JSONEncoder = {

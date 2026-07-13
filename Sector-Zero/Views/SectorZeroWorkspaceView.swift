@@ -60,25 +60,53 @@ struct SectorZeroWorkspaceView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             Text(workspace.currentProject?.projectName.uppercased() ?? "SECTOR ZERO")
                 .font(.sectorMono(13, weight: .semibold))
                 .tracking(2)
                 .foregroundStyle(Color.sectorText)
+            statusChip
             Spacer(minLength: 0)
             runPauseButton
             stepButton
+            resetButton
         }
+    }
+
+    private var statusChip: some View {
+        let condition = workspace.machineCondition
+        let hue = Color.sectorStatus(condition.severity)
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(hue)
+                .frame(width: 6, height: 6)
+            Text(condition.label)
+                .font(.sectorMono(10, weight: .semibold))
+                .tracking(1.5)
+                .foregroundStyle(hue)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(hue.opacity(0.35), lineWidth: 1)
+        }
+        .help(workspace.machineConditionDetail ?? "Machine condition")
+        .accessibilityIdentifier("machineStatusChip")
+        .accessibilityLabel("Machine status: \(condition.label)")
     }
 
     private var runPauseButton: some View {
         Button {
             workspace.toggleRunPause()
         } label: {
-            controlLabel(workspace.runButtonTitle)
+            controlLabel(workspace.runButtonTitle, tint: workspace.isRunning ? .sectorRun : nil)
         }
         .buttonStyle(.plain)
-        .help(workspace.isRunning ? "Pause at the next instruction boundary" : "Run the machine")
+        .keyboardShortcut("r", modifiers: .command)
+        .help(workspace.isRunning
+            ? "Pause at the next instruction boundary (⌘R)"
+            : "Run the machine (⌘R)")
         .accessibilityIdentifier("runPauseButton")
     }
 
@@ -87,23 +115,39 @@ struct SectorZeroWorkspaceView: View {
             workspace.step()
         } label: {
             controlLabel("STEP")
+                .opacity(workspace.isRunning ? 0.4 : 1)
         }
         .buttonStyle(.plain)
         .disabled(workspace.isRunning)
-        .help("Fetch the next opcode at CS:IP")
+        .keyboardShortcut("t", modifiers: .command)
+        .help("Fetch the next opcode at CS:IP (⌘T)")
         .accessibilityIdentifier("stepButton")
     }
 
-    private func controlLabel(_ title: String) -> some View {
+    private var resetButton: some View {
+        Button {
+            workspace.resetMachine()
+        } label: {
+            controlLabel("RESET")
+                .opacity(workspace.isRunning ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(workspace.isRunning)
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+        .help("Reset the CPU and devices to their power-on state (⇧⌘R)")
+        .accessibilityIdentifier("resetButton")
+    }
+
+    private func controlLabel(_ title: String, tint: Color? = nil) -> some View {
         Text(title)
             .font(.sectorMono(11, weight: .semibold))
             .tracking(1.5)
-            .foregroundStyle(Color.sectorText)
+            .foregroundStyle(tint ?? Color.sectorText)
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.sectorBorder, lineWidth: 1)
+                    .stroke(tint?.opacity(0.5) ?? Color.sectorBorder, lineWidth: 1)
             }
     }
 
@@ -136,12 +180,22 @@ struct SectorZeroWorkspaceView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 16) {
             Text(workspace.statusText)
                 .font(.sectorMono(11))
                 .tracking(1.4)
                 .foregroundStyle(Color.sectorMutedText)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
+            if let detail = workspace.machineConditionDetail {
+                Text(detail)
+                    .font(.sectorMono(11))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.sectorStatus(workspace.machineCondition.severity))
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
         }
     }
 

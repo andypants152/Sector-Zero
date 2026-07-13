@@ -12,6 +12,23 @@ extension Color {
     static let sectorHeading = Color(red: 0.64, green: 0.82, blue: 0.68)
     static let sectorMutedText = Color(red: 0.40, green: 0.51, blue: 0.43)
     static let sectorAccent = Color(red: 0.92, green: 0.74, blue: 0.34)
+
+    /// Status semantics. Green reads as "live/ok", amber as "held/attention",
+    /// red as "stopped in error" — shared by the run controls, the status
+    /// chip, and the inspector so a machine's condition is one consistent hue.
+    static let sectorRun = Color(red: 0.44, green: 0.86, blue: 0.55)
+    static let sectorFault = Color(red: 0.91, green: 0.44, blue: 0.42)
+
+    /// The single severity-to-hue mapping. Every view that shows machine
+    /// condition goes through this so the same state never wears two colors.
+    static func sectorStatus(_ severity: MachineCondition.Severity) -> Color {
+        switch severity {
+        case .live: .sectorRun
+        case .ready: .sectorMutedText
+        case .held: .sectorAccent
+        case .fault: .sectorFault
+        }
+    }
 }
 
 extension Font {
