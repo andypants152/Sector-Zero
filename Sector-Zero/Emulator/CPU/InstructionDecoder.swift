@@ -1,5 +1,11 @@
 import Foundation
 
+enum OpcodeClassification: Hashable, Sendable {
+    case implemented
+    case intentionallyReservedOrAliased
+    case unsupported
+}
+
 /// Translates fetched opcode bytes into typed `Instruction` values.
 ///
 /// Decoding is pure: it never touches registers, memory, or flags. The
@@ -9,6 +15,18 @@ import Foundation
 /// register file is read (never written) to resolve effective addresses.
 struct InstructionDecoder {
     private let modRMDecoder = ModRMDecoder()
+
+    /// Primary-opcode policy for all 256 byte values. The original 8086's
+    /// undocumented aliases/reserved slots remain deliberate diagnostics;
+    /// every documented primary opcode is implemented at the M39 gate.
+    static func classification(of opcode: UInt8) -> OpcodeClassification {
+        switch opcode {
+        case 0x60...0x6F, 0x82, 0xC0, 0xC1, 0xC8, 0xC9, 0xD6, 0xF1:
+            return .intentionallyReservedOrAliased
+        default:
+            return .implemented
+        }
+    }
 
     func decode(opcode: UInt8, registers: RegisterFile, nextByte: () -> UInt8) -> Instruction {
         switch opcode {
@@ -387,6 +405,17 @@ struct InstructionDecoder {
             return .convertWordToDoubleword
         case 0xD7:
             return .translateByte
+        case 0x9B:
+            return .waitForCoprocessor
+        case 0xD8...0xDF:
+            let modRMByte = nextByte()
+            let modRM = modRMDecoder.decode(modRMByte: modRMByte, registers: registers, nextByte: nextByte)
+            return .coprocessorEscape(
+                opcode: opcode,
+                modRM: modRMByte,
+                operand: modRM.operand,
+                eaClocks: modRM.eaClocks
+            )
         case 0xE4, 0xE5:
             return .input(port: .immediate(nextByte()), isWord: opcode & 1 != 0)
         case 0xE6, 0xE7:

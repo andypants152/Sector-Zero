@@ -29,10 +29,8 @@ struct RepeatExecutionResult: Equatable, Sendable {
 
 /// A decoded 8086 instruction, independent of how its bytes were fetched.
 ///
-/// Milestone 3 covers only the single-byte opcodes NOP and HLT; any other
-/// opcode decodes to `.unknown` carrying the raw byte so callers can surface
-/// or trap it. Operand-bearing cases (immediates, ModR/M) will be added as
-/// later milestones land.
+/// Encodings outside the supported 8086 matrix decode to `.unknown` carrying
+/// their primary byte; execution turns that value into an emulator diagnostic.
 enum Instruction: Equatable {
     case nop
     case hlt
@@ -78,6 +76,8 @@ enum Instruction: Equatable {
     case translateByte
     case input(port: IOPortSource, isWord: Bool)
     case output(port: IOPortSource, isWord: Bool)
+    case waitForCoprocessor
+    case coprocessorEscape(opcode: UInt8, modRM: UInt8, operand: ModRMOperand, eaClocks: Int)
     case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case testImmediateRM8(destination: ModRMOperand, immediate: UInt8, eaClocks: Int)
@@ -121,6 +121,29 @@ enum Instruction: Equatable {
     case loop(condition: LoopCondition, displacement: Int8)
     case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)
+}
+
+extension Instruction {
+    /// LOCK is accepted only for instructions that write a memory destination
+    /// derived from the value read from that same destination.
+    var isLockableMemoryReadModifyWrite: Bool {
+        switch self {
+        case .exchangeRM8(_, .memory, _), .exchangeRM16(_, .memory, _),
+             .incRM8(.memory, _), .decRM8(.memory, _),
+             .incRM16(.memory, _), .decRM16(.memory, _),
+             .shiftRotate8(_, .memory, _, _), .shiftRotate16(_, .memory, _, _):
+            return true
+        case .unary8(let operation, .memory, _), .unary16(let operation, .memory, _):
+            return operation == .not || operation == .negate
+        case .aluRegisterToRM8(let operation, _, .memory, _),
+             .aluRegisterToRM16(let operation, _, .memory, _),
+             .aluImmediateToRM8(let operation, .memory, _, _),
+             .aluImmediateToRM16(let operation, .memory, _, _):
+            return operation.writesResult
+        default:
+            return false
+        }
+    }
 }
 
 /// The defined non-immediate selectors in the 8086 F6/F7 unary group. TEST

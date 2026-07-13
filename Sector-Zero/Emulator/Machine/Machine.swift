@@ -87,6 +87,7 @@ final class Machine {
             clock.advance(by: interruptClocks)
             return
         }
+        guard cpu.resumeAfterCoprocessorWaitIfReady() else { return }
         guard !cpu.halted else { return }
 
         var cycles = 0
@@ -94,16 +95,18 @@ final class Machine {
         let instructionIP = cpu.ip
         let trapWasSet = cpu.flags[.trap]
         let overflowWasSet = cpu.flags[.overflow]
-        // Consume segment and repeat prefixes in any order. Each costs 2 clocks
-        // and the last prefix of each kind wins; a repeated string can suspend
-        // only at a completed iteration boundary.
+        // Consume segment, repeat, and LOCK prefixes in any order. Each costs
+        // 2 clocks; segment/repeat are last-one-wins and LOCK is idempotent.
         var opcode = cpu.fetch()
         var repeatPrefix: RepeatPrefix?
+        var lockPrefix = false
         while true {
             if let override = SegmentRegister(overridePrefix: opcode) {
                 cpu.setSegmentOverride(override)
             } else if let repeatValue = RepeatPrefix(opcode: opcode) {
                 repeatPrefix = repeatValue
+            } else if opcode == 0xF0 {
+                lockPrefix = true
             } else {
                 break
             }
@@ -116,7 +119,7 @@ final class Machine {
 
         if let repeatPrefix {
             var boundaryInterruptClocks = 0
-            let result = cpu.executeRepeated(instruction, prefix: repeatPrefix) {
+            let result = cpu.executeRepeated(instruction, prefix: repeatPrefix, locked: lockPrefix) {
                 if let accepted = self.finishRepeatIterationBoundary(
                     trapWasSet: trapWasSet,
                     restartCS: instructionCS,
@@ -144,9 +147,16 @@ final class Machine {
                 return
             }
         } else {
-            cycles += cpu.execute(instruction)
+            cycles += cpu.execute(instruction, locked: lockPrefix)
         }
         cpu.clearSegmentOverride()
+
+        // Emulator diagnostics stop at the offending instruction boundary;
+        // they must not be mistaken for interruptible architectural faults.
+        if cpu.fault != nil {
+            clock.advance(by: cycles)
+            return
+        }
 
         let deferOtherInterrupts: Bool = switch instruction {
         case .breakpointInterrupt, .softwareInterrupt: true

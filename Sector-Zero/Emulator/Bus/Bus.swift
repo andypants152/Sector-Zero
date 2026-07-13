@@ -9,6 +9,10 @@ protocol Bus: AnyObject {
     func readIOWord(at port: UInt16) -> UInt16
     func writeIOByte(_ value: UInt8, at port: UInt16)
     func writeIOWord(_ value: UInt16, at port: UInt16)
+    var coprocessorReady: Bool { get }
+    func performCoprocessorEscape(opcode: UInt8, modRM: UInt8)
+    func beginAtomicMemoryAccess()
+    func endAtomicMemoryAccess()
 }
 
 /// Test and specialist buses that only model memory get deterministic open-bus
@@ -18,11 +22,18 @@ extension Bus {
     func readIOWord(at port: UInt16) -> UInt16 { 0xFFFF }
     func writeIOByte(_ value: UInt8, at port: UInt16) {}
     func writeIOWord(_ value: UInt16, at port: UInt16) {}
+    var coprocessorReady: Bool { true }
+    func performCoprocessorEscape(opcode: UInt8, modRM: UInt8) {}
+    func beginAtomicMemoryAccess() {}
+    func endAtomicMemoryAccess() {}
 }
 
 final class EmulatorBus: Bus {
     private let memory: Memory
     private var ioDevices: [UInt16: any IOPortDevice] = [:]
+    var coprocessorReady = true
+    private(set) var atomicMemoryAccessDepth = 0
+    private(set) var atomicMemoryAccessCount = 0
 
     init(memory: Memory) {
         self.memory = memory
@@ -70,5 +81,19 @@ final class EmulatorBus: Bus {
 
     func writeIOWord(_ value: UInt16, at port: UInt16) {
         ioDevices[port]?.writeWord(value, to: port)
+    }
+
+    /// The base machine has no 8087. ESC therefore reaches a deterministic
+    /// no-coprocessor endpoint after the decoder has consumed its full operand.
+    func performCoprocessorEscape(opcode: UInt8, modRM: UInt8) {}
+
+    func beginAtomicMemoryAccess() {
+        atomicMemoryAccessDepth += 1
+        atomicMemoryAccessCount += 1
+    }
+
+    func endAtomicMemoryAccess() {
+        precondition(atomicMemoryAccessDepth > 0, "unbalanced atomic memory access")
+        atomicMemoryAccessDepth -= 1
     }
 }

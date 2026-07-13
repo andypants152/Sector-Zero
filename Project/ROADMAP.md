@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M38 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M39 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -20,11 +20,12 @@ shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
 CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
-sign extension and XLAT; port I/O and IN/OUT). The next milestone is M39 below.
+sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
+completion policy). The next milestone is M40 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
-instruction's *data-operand* segment. `Machine.step()` consumes segment and
-repeat prefixes in one loop (2 clocks each; last of each kind wins), then
+instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
+and LOCK prefixes in one loop (2 clocks each; last segment/repeat wins), then
 decodes+executes+clears. REP execution is centralized in
 `CPU8086.executeRepeated`; `Machine` preserves a suspended repeat context when
 an interrupt is accepted between iterations and resumes it after IRET without
@@ -505,7 +506,7 @@ matrix introduced in M39 is the CPU-completion gate.
   FFFFh and writes are ignored. All immediate and DX forms preserve FLAGS and
   non-destination registers. Immediate ports cost 10 clocks and DX ports 8.
 
-### M39 — LOCK/WAIT/ESC policy and CPU completion gate (0x9B, 0xD8–0xDF, 0xF0)
+### M39 — LOCK/WAIT/ESC policy and CPU completion gate (0x9B, 0xD8–0xDF, 0xF0) ✅
 - **Goal:** Close the opcode table deliberately and declare the integer core
   ready for machine work.
 - **Build:** WAIT observes a stub coprocessor-ready signal; ESC consumes its
@@ -520,6 +521,14 @@ matrix introduced in M39 is the CPU-completion gate.
 - **Tests:** Prefix composition, legal/illegal LOCK use, WAIT ready/not-ready,
   ESC byte consumption for every ModR/M length, no accidental unknown opcodes in
   the supported matrix, and representative end-to-end CPU diagnostics.
+- **Completed:** WAIT holds fetch on a mutable coprocessor-ready bus signal; all
+  eight ESC opcodes consume complete ModR/M addressing and call a deterministic
+  no-coprocessor endpoint. LOCK composes with existing prefixes, rejects
+  non-memory-RMW uses with an emulator diagnostic, and brackets legal operations
+  with bus-level atomic markers. The 256-byte table classifies 233 implemented
+  primary bytes and 23 intentional 8086 reserved/undocumented-alias slots, with
+  no unsupported documented primary opcodes. Unknown and invalid group forms now
+  stop with an observable `CPUFault` after consuming their complete encoding.
 
 ---
 

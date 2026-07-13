@@ -39,13 +39,14 @@ struct UnaryGroupTests {
         }
     }
 
-    @Test("Undefined /1 consumes only ModR/M and displacement")
+    @Test("Undefined /1 consumes ModR/M and displacement before faulting")
     func undefinedSelectorStaysAligned() {
-        // F6 /1 direct-address consumes opcode+ModR/M+disp16, then HLT.
+        // F6 /1 direct-address consumes opcode+ModR/M+disp16, then faults.
         let machine = machineWithOpcodes([0xF6, 0x0E, 0x40, 0x00, 0xF4])
         machine.run(maxSteps: 2)
-        #expect(machine.cpu.ip == 5)
+        #expect(machine.cpu.ip == 4)
         #expect(machine.cpu.halted)
+        #expect(machine.cpu.fault == .unsupportedOpcode(0xF6))
     }
 
     @Test("F6 /0 TEST matches TEST r/m8,reg8 flags and timing")

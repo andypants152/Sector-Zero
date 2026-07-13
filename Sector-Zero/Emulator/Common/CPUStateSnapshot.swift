@@ -17,6 +17,7 @@ struct CPUStateSnapshot: Equatable, Sendable {
     let flags: CPUFlags
     let lastFetchedOpcode: UInt8?
     let halted: Bool
+    let waitingForCoprocessor: Bool
     let fault: CPUFault?
 
     /// Two-digit hex of the last fetched opcode, or "--" when nothing has been

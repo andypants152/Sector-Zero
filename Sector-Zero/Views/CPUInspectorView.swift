@@ -55,7 +55,9 @@ struct CPUInspectorView: View {
             valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip))
             valueRow(name: "PHYS", value: String(format: "%05X", state.physicalCodeAddress))
             valueRow(name: "OPC", value: cpu.lastFetchedOpcodeText)
-            valueRow(name: "STATE", value: cpu.fault == nil ? (cpu.halted ? "HALT" : "RUN") : "FAULT")
+            valueRow(name: "STATE", value: cpu.fault == nil
+                ? (cpu.halted ? "HALT" : (cpu.waitingForCoprocessor ? "WAIT" : "RUN"))
+                : "FAULT")
         }
     }
 

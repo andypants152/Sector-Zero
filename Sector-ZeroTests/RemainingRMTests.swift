@@ -142,7 +142,7 @@ struct RemainingRMTests {
         #expect(machine.cpu.sp == 0)
     }
 
-    @Test("Unsupported group selectors consume complete addressing bytes", arguments: [
+    @Test("Unsupported group selectors consume addressing bytes before faulting", arguments: [
         (UInt8(0x8F), UInt8(0x0E)), // /1
         (UInt8(0xFE), UInt8(0x16)), // /2
         (UInt8(0xFF), UInt8(0x3E)), // /7
@@ -150,7 +150,8 @@ struct RemainingRMTests {
     func unsupportedSelectorsStayAligned(opcode: UInt8, modRM: UInt8) {
         let machine = machineWithOpcodes([opcode, modRM, 0x40, 0x00, 0xF4])
         machine.run(maxSteps: 2)
-        #expect(machine.cpu.ip == 5)
+        #expect(machine.cpu.ip == 4)
         #expect(machine.cpu.halted)
+        #expect(machine.cpu.fault == .unsupportedOpcode(opcode))
     }
 }

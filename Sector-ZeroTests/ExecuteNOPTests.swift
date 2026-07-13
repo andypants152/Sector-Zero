@@ -6,8 +6,8 @@ import Testing
 /// `Machine.step()` now runs a full fetch → decode → execute pass. Executing
 /// NOP (0x90) changes no CPU state beyond the IP advance already performed by
 /// the fetch, and charges NOP's documented 8086 cost of 3 clocks to the cycle
-/// counter. The `.unknown` policy is no-op-and-advance: unrecognised opcodes
-/// execute as a NOP (same provisional 3-clock cost) so stepping never wedges.
+/// counter. At the M39 completion gate, an unrecognised opcode stops execution
+/// with an observable emulator diagnostic instead of silently acting as NOP.
 struct ExecuteNOPTests {
     private let resetVector: UInt32 = 0xFFFF0
 
@@ -61,18 +61,20 @@ struct ExecuteNOPTests {
         #expect(snapshot.cycleCount == 9)
     }
 
-    @Test("Unknown opcode executes as no-op-and-advance")
-    func unknownOpcodeIsNoOpAndAdvance() {
+    @Test("Unknown opcode stops with an observable emulator fault")
+    func unknownOpcodeRaisesDiagnostic() {
         let machine = machineWithOpcodes([0x60])
         let before = machine.snapshot().cpu
         machine.step()
         let after = machine.snapshot()
 
         #expect(after.cpu.ip == 0x0001)
-        #expect(after.cycleCount == 3)
+        #expect(after.cycleCount == 0)
         #expect(after.cpu.ax == before.ax)
         #expect(after.cpu.flags.rawValue == before.flags.rawValue)
         #expect(after.cpu.lastFetchedOpcode == 0x60)
+        #expect(after.cpu.fault == .unsupportedOpcode(0x60))
+        #expect(after.cpu.halted)
     }
 
     @Test("Reset clears accumulated cycles")

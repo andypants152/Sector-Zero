@@ -31,6 +31,10 @@ final class CPU8086 {
     /// or an accepted NMI/enabled INTR wakes it through `acceptInterrupt`.
     private(set) var halted = false
 
+    /// WAIT has completed its fetch but is holding instruction retirement
+    /// until the coprocessor-ready input becomes true.
+    private(set) var waitingForCoprocessor = false
+
     /// Retained in snapshots for compatibility; architectural divide errors
     /// now enter vector 0 directly and leave this clear.
     private(set) var fault: CPUFault?
@@ -68,6 +72,7 @@ final class CPU8086 {
         flags = CPUFlags()
         lastFetchedOpcode = nil
         halted = false
+        waitingForCoprocessor = false
         fault = nil
         divideErrorPending = false
         segmentOverride = nil
@@ -102,13 +107,25 @@ final class CPU8086 {
 
     /// Executes one decoded instruction and returns its cost in clock cycles.
     ///
-    /// NOP costs 3 clocks on the 8086 and changes no state — the fetch already
-    /// advanced IP past it. Unknown opcodes follow a no-op-and-advance policy
-    /// (executed like NOP, at the same provisional 3-clock cost) so stepping
-    /// through unimplemented code never wedges the machine; a trap mechanism
-    /// can replace this once interrupts exist. HLT (2 clocks) puts the CPU
-    /// into the halted state, exited only by reset for now.
-    func execute(_ instruction: Instruction) -> Int {
+    /// LOCK wraps one legal memory read-modify-write in the bus's atomic
+    /// boundary. Illegal uses become an emulator diagnostic, not an invented
+    /// invalid-opcode exception on hardware that did not have one.
+    func execute(_ instruction: Instruction, locked: Bool = false) -> Int {
+        if locked {
+            guard instruction.isLockableMemoryReadModifyWrite else {
+                fault = .invalidLockPrefix
+                halted = true
+                return 0
+            }
+            bus.beginAtomicMemoryAccess()
+            let cycles = executeUnlocked(instruction)
+            bus.endAtomicMemoryAccess()
+            return cycles
+        }
+        return executeUnlocked(instruction)
+    }
+
+    private func executeUnlocked(_ instruction: Instruction) -> Int {
         switch instruction {
         case .nop:
             return 3
@@ -373,6 +390,12 @@ final class CPU8086 {
                 bus.writeIOByte(registers[.al], at: port)
             }
             return ioClocks(for: portSource)
+        case .waitForCoprocessor:
+            waitingForCoprocessor = !bus.coprocessorReady
+            return 4
+        case .coprocessorEscape(let opcode, let modRM, let operand, let eaClocks):
+            bus.performCoprocessorEscape(opcode: opcode, modRM: modRM)
+            return isRegister(operand) ? 2 : 8 + eaClocks
         case .shiftRotate8(let operation, let destination, let countSource, let eaClocks):
             let count: UInt8 = countSource == .one ? 1 : registers[.cl]
             let outcome = ALU.shiftRotate8(
@@ -620,8 +643,10 @@ final class CPU8086 {
             guard registers[.cx] == 0 else { return 6 }
             ip = ip &+ UInt16(bitPattern: Int16(displacement))
             return 18
-        case .unknown:
-            return 3
+        case .unknown(let opcode):
+            fault = .unsupportedOpcode(opcode)
+            halted = true
+            return 0
         }
     }
 
@@ -632,10 +657,14 @@ final class CPU8086 {
     func executeRepeated(
         _ instruction: Instruction,
         prefix: RepeatPrefix,
+        locked: Bool = false,
         interruptAfterIteration: () -> Bool = { false }
     ) -> RepeatExecutionResult {
+        if locked && !instruction.isLockableMemoryReadModifyWrite {
+            return RepeatExecutionResult(cycles: execute(instruction, locked: true), interrupted: false)
+        }
         guard let iterationClocks = repeatIterationClocks(for: instruction) else {
-            return RepeatExecutionResult(cycles: execute(instruction), interrupted: false)
+            return RepeatExecutionResult(cycles: execute(instruction, locked: locked), interrupted: false)
         }
 
         var cycles = 7
@@ -666,6 +695,7 @@ final class CPU8086 {
     /// field remains clear once architectural delivery begins.
     func acceptInterrupt(type: UInt8, returnCS: UInt16, returnIP: UInt16) {
         halted = false
+        waitingForCoprocessor = false
         fault = nil
         enterInterrupt(type, returnCS: returnCS, returnIP: returnIP)
     }
@@ -674,6 +704,16 @@ final class CPU8086 {
         let pending = divideErrorPending
         divideErrorPending = false
         return pending
+    }
+
+    /// Returns whether instruction fetch may proceed after a WAIT. A ready
+    /// transition releases the hold without charging or fetching a phantom
+    /// instruction; an interrupt can also release it through acceptInterrupt.
+    func resumeAfterCoprocessorWaitIfReady() -> Bool {
+        guard waitingForCoprocessor else { return true }
+        guard bus.coprocessorReady else { return false }
+        waitingForCoprocessor = false
+        return true
     }
 
     /// Restores the post-instruction address after a suspended REP finishes.
@@ -1088,6 +1128,7 @@ final class CPU8086 {
             flags: flags,
             lastFetchedOpcode: lastFetchedOpcode,
             halted: halted,
+            waitingForCoprocessor: waitingForCoprocessor,
             fault: fault
         )
     }

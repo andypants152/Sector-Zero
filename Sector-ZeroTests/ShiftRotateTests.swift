@@ -217,12 +217,13 @@ struct ShiftRotateTests {
         }
     }
 
-    @Test("Undefined /6 consumes ModR/M and displacement before continuing")
+    @Test("Undefined /6 consumes ModR/M and displacement before faulting")
     func undefinedSelectorStaysAligned() {
-        // D1 /6 direct-address consumes four bytes, then HLT executes.
+        // D1 /6 direct-address consumes four bytes; M39 stops at the gap.
         let machine = machineWithOpcodes([0xD1, 0x36, 0x40, 0x00, 0xF4])
         machine.run(maxSteps: 2)
-        #expect(machine.cpu.ip == 5)
+        #expect(machine.cpu.ip == 4)
         #expect(machine.cpu.halted)
+        #expect(machine.cpu.fault == .unsupportedOpcode(0xD1))
     }
 }
