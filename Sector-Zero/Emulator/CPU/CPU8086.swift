@@ -31,6 +31,12 @@ final class CPU8086 {
     /// exits the state until interrupt-driven wake-from-halt exists.
     private(set) var halted = false
 
+    /// A pending segment-override prefix that redirects the next instruction's
+    /// data-operand segment. Set by the fetch/decode loop when it consumes a
+    /// 0x26/0x2E/0x36/0x3E prefix, cleared once the instruction executes. Stack
+    /// and code accesses never consult it.
+    private(set) var segmentOverride: SegmentRegister?
+
     init(bus: Bus) {
         self.bus = bus
         reset()
@@ -54,6 +60,19 @@ final class CPU8086 {
         flags = CPUFlags()
         lastFetchedOpcode = nil
         halted = false
+        segmentOverride = nil
+    }
+
+    /// Records a pending segment override (last prefix before an instruction
+    /// wins). Consumed by the next instruction's data-operand resolution.
+    func setSegmentOverride(_ segment: SegmentRegister) {
+        segmentOverride = segment
+    }
+
+    /// Clears the pending override; the fetch/decode loop calls this once the
+    /// prefixed instruction has executed.
+    func clearSegmentOverride() {
+        segmentOverride = nil
     }
 
     /// Fetches one opcode byte from the code stream at CS:IP through the bus and
@@ -100,7 +119,7 @@ final class CPU8086 {
                 registers[Register8(rawValue: encoding)!] = registers[source]
                 return 2
             case .memory(let address):
-                bus.writeByte(registers[source], at: physicalAddress(of: address))
+                bus.writeByte(registers[source], at: physicalAddress(of: resolved(address)))
                 return 9 + eaClocks
             }
         case .movRegisterToRM16(let source, let destination, let eaClocks):
@@ -109,7 +128,7 @@ final class CPU8086 {
                 registers[Register16(rawValue: encoding)!] = registers[source]
                 return 2
             case .memory(let address):
-                writeMemoryWord(registers[source], at: address)
+                writeMemoryWord(registers[source], at: resolved(address))
                 return 9 + eaClocks
             }
         case .movRMToRegister8(let destination, let source, let eaClocks):
@@ -119,7 +138,7 @@ final class CPU8086 {
                 registers[destination] = registers[Register8(rawValue: encoding)!]
                 return 2
             case .memory(let address):
-                registers[destination] = bus.readByte(at: physicalAddress(of: address))
+                registers[destination] = bus.readByte(at: physicalAddress(of: resolved(address)))
                 return 8 + eaClocks
             }
         case .movRMToRegister16(let destination, let source, let eaClocks):
@@ -128,7 +147,7 @@ final class CPU8086 {
                 registers[destination] = registers[Register16(rawValue: encoding)!]
                 return 2
             case .memory(let address):
-                registers[destination] = readMemoryWord(at: address)
+                registers[destination] = readMemoryWord(at: resolved(address))
                 return 8 + eaClocks
             }
         case .movImmediateToRM8(let destination, let value, let eaClocks):
@@ -139,8 +158,9 @@ final class CPU8086 {
             writeOperand16(value, to: destination)
             return isRegister(destination) ? 4 : 10 + eaClocks
         case .movMemoryOffset(let offset, let isWord, let store):
-            // MOV AL/AX ↔ [DS:offset] (A0–A3); a flat 10 clocks, no flags.
-            let address = EffectiveAddress(offset: offset, defaultSegment: .ds)
+            // MOV AL/AX ↔ [DS:offset] (A0–A3); a flat 10 clocks, no flags. A
+            // segment-override prefix redirects it like any data operand.
+            let address = resolved(EffectiveAddress(offset: offset, defaultSegment: .ds))
             switch (store, isWord) {
             case (false, false): registers[.al] = bus.readByte(at: physicalAddress(of: address))
             case (false, true):  registers[.ax] = readMemoryWord(at: address)
@@ -165,6 +185,20 @@ final class CPU8086 {
             registers[.ax] = registers[register]
             registers[register] = temp
             return 3
+        case .movSegmentToRM(let destination, let segment, let eaClocks):
+            // MOV r/m16, sreg — register 2 clocks, memory 9+EA. No flags.
+            writeOperand16(segmentValue(segment), to: destination)
+            return isRegister(destination) ? 2 : 9 + eaClocks
+        case .movRMToSegment(let segment, let source, let eaClocks):
+            // MOV sreg, r/m16 — register 2 clocks, memory 8+EA. No flags.
+            writeSegment(readOperand16(source), to: segment)
+            return isRegister(source) ? 2 : 8 + eaClocks
+        case .pushSegment(let segment):
+            push16(segmentValue(segment))
+            return 10
+        case .popSegment(let segment):
+            writeSegment(pop16(), to: segment)
+            return 8
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
             // ALU r/m8, r8 — a memory destination is read-modify-write
             // (16+EA), except CMP which only reads (9+EA).
@@ -332,29 +366,37 @@ final class CPU8086 {
     private func readOperand8(_ operand: ModRMOperand) -> UInt8 {
         switch operand {
         case .register(let encoding): return registers[Register8(rawValue: encoding)!]
-        case .memory(let address): return bus.readByte(at: physicalAddress(of: address))
+        case .memory(let address): return bus.readByte(at: physicalAddress(of: resolved(address)))
         }
     }
 
     private func writeOperand8(_ value: UInt8, to operand: ModRMOperand) {
         switch operand {
         case .register(let encoding): registers[Register8(rawValue: encoding)!] = value
-        case .memory(let address): bus.writeByte(value, at: physicalAddress(of: address))
+        case .memory(let address): bus.writeByte(value, at: physicalAddress(of: resolved(address)))
         }
     }
 
     private func readOperand16(_ operand: ModRMOperand) -> UInt16 {
         switch operand {
         case .register(let encoding): return registers[Register16(rawValue: encoding)!]
-        case .memory(let address): return readMemoryWord(at: address)
+        case .memory(let address): return readMemoryWord(at: resolved(address))
         }
     }
 
     private func writeOperand16(_ value: UInt16, to operand: ModRMOperand) {
         switch operand {
         case .register(let encoding): registers[Register16(rawValue: encoding)!] = value
-        case .memory(let address): writeMemoryWord(value, at: address)
+        case .memory(let address): writeMemoryWord(value, at: resolved(address))
         }
+    }
+
+    /// Applies a pending segment override to a data operand's address. Stack
+    /// and code accesses build their own addresses and never call this, so they
+    /// always use SS/CS regardless of any prefix.
+    private func resolved(_ address: EffectiveAddress) -> EffectiveAddress {
+        guard let segmentOverride else { return address }
+        return EffectiveAddress(offset: address.offset, defaultSegment: segmentOverride)
     }
 
     private func segmentValue(_ segment: SegmentRegister) -> UInt16 {

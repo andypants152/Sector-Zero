@@ -4,6 +4,30 @@ import Foundation
 /// addresses by default (overridable by segment prefixes, a later milestone).
 enum SegmentRegister: Equatable, Sendable {
     case es, cs, ss, ds
+
+    /// The 2-bit segment encoding used by MOV sreg (8C/8E reg field) and the
+    /// PUSH/POP sreg opcodes: 0=ES, 1=CS, 2=SS, 3=DS. The 8086 ignores bit 2
+    /// of the ModR/M reg field for these, so only the low two bits matter.
+    init(segmentEncoding reg: UInt8) {
+        switch reg & 0b11 {
+        case 0: self = .es
+        case 1: self = .cs
+        case 2: self = .ss
+        default: self = .ds
+        }
+    }
+
+    /// The segment named by a segment-override prefix byte, or nil if the byte
+    /// is not one of 0x26 (ES), 0x2E (CS), 0x36 (SS), 0x3E (DS).
+    init?(overridePrefix opcode: UInt8) {
+        switch opcode {
+        case 0x26: self = .es
+        case 0x2E: self = .cs
+        case 0x36: self = .ss
+        case 0x3E: self = .ds
+        default: return nil
+        }
+    }
 }
 
 /// A resolved memory operand: a 16-bit offset plus the segment it addresses

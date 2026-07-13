@@ -219,6 +219,21 @@ struct InstructionDecoder {
             let value = nextByte()
             guard modRM.reg == 0 else { return .unknown(opcode) }
             return .movImmediateToRM8(destination: modRM.operand, value: value, eaClocks: modRM.eaClocks)
+        case 0x8C:
+            // MOV r/m16, sreg — the ModR/M reg field selects the segment.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            return .movSegmentToRM(destination: modRM.operand, segment: SegmentRegister(segmentEncoding: modRM.reg), eaClocks: modRM.eaClocks)
+        case 0x8E:
+            // MOV sreg, r/m16. Writing CS is accepted on the 8086 (later CPUs
+            // fault); we match the silicon and let it redirect the fetch.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            return .movRMToSegment(segment: SegmentRegister(segmentEncoding: modRM.reg), source: modRM.operand, eaClocks: modRM.eaClocks)
+        case let sreg where sreg & 0b11100110 == 0b00000110:
+            // PUSH/POP sreg: 000-ss-11d, bits 4–3 select ES/CS/SS/DS, bit 0
+            // push(0)/pop(1). 0x0F is POP CS — the 8086's real encoding (later
+            // CPUs repurpose 0F as the two-byte-opcode escape).
+            let segment = SegmentRegister(segmentEncoding: sreg >> 3)
+            return sreg & 0b01 == 0 ? .pushSegment(segment) : .popSegment(segment)
         case 0x90:
             return .nop
         case 0xF4:

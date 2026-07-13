@@ -4,18 +4,17 @@ import Testing
 /// Milestone 3 — instruction decoding.
 ///
 /// The decoder turns a fetched opcode byte into a typed `Instruction` without
-/// executing anything. Only the single-byte opcodes NOP (0x90) and HLT (0xF4)
-/// are recognised; everything else decodes to `.unknown`. Decoding is pure —
-/// it touches no CPU or machine state, and no operand bytes exist yet, so the
-/// byte reader must never be called.
+/// executing it. Operand-bearing instructions pull immediates, ModR/M bytes,
+/// and displacements through `nextByte`; operand-free instructions must not
+/// touch the reader. Decoding is pure: it can read the register file to resolve
+/// effective addresses, but it must not mutate register or machine state.
 struct InstructionDecoderTests {
     private let decoder = InstructionDecoder()
 
-    /// A byte reader that fails the test if the decoder asks for operand bytes,
-    /// which no currently-decoded instruction requires.
+    /// A byte reader for opcodes that should not request operand bytes.
     private func forbiddenReader() -> () -> UInt8 {
         {
-            Issue.record("Decoder requested an operand byte for an instruction that has none")
+            Issue.record("Decoder requested an operand byte for an operand-free instruction")
             return 0
         }
     }
@@ -31,7 +30,7 @@ struct InstructionDecoderTests {
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x60), 0x0F, 0x27, 0x62, 0x64, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
+        UInt8(0x60), 0x61, 0x27, 0x62, 0x64, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
     ])
     func decodesUnknown(opcode: UInt8) {
         #expect(decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader()) == .unknown(opcode))
@@ -50,7 +49,7 @@ struct InstructionDecoderTests {
         let operandOpcodes: Set<ClosedRange<UInt8>> = [
             0x00...0x05, 0x08...0x0D, 0x14...0x15, 0x1C...0x1D,
             0x20...0x25, 0x28...0x2D, 0x30...0x35, 0x38...0x3D,
-            0x70...0x7F, 0x80...0x81, 0x83...0x8B, 0xA0...0xA3,
+            0x70...0x7F, 0x80...0x81, 0x83...0x8C, 0x8E...0x8E, 0xA0...0xA3,
             0xA8...0xA9, 0xB0...0xBF, 0xC6...0xC7, 0xE0...0xE3, 0xE8...0xEB,
         ]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
@@ -58,17 +57,19 @@ struct InstructionDecoderTests {
         }
     }
 
-    @Test("Decoding does not mutate CPU or machine state")
+    @Test("Decoding does not mutate the register file")
     func decodingIsPure() {
-        let machine = Machine()
-        let before = machine.snapshot()
-        _ = decoder.decode(opcode: 0x90, registers: RegisterFile(), nextByte: forbiddenReader())
-        _ = decoder.decode(opcode: 0xF4, registers: RegisterFile(), nextByte: forbiddenReader())
-        _ = decoder.decode(opcode: 0xAB, registers: RegisterFile(), nextByte: forbiddenReader())
-        let after = machine.snapshot()
-        #expect(after.cpu.ip == before.cpu.ip)
-        #expect(after.cpu.lastFetchedOpcode == before.cpu.lastFetchedOpcode)
-        #expect(after.cycleCount == before.cycleCount)
+        var registers = RegisterFile()
+        registers[.bx] = 0x1000
+        registers[.si] = 0x0004
+        let before = registers
+
+        var stream: [UInt8] = [0x00] // ModR/M: mod=00 reg=000 r/m=000 => [BX+SI]
+        _ = decoder.decode(opcode: 0x8A, registers: registers) {
+            stream.removeFirst()
+        }
+
+        #expect(registers == before)
     }
 
     @Test("Decoding the same byte sequence twice yields the same instruction")
