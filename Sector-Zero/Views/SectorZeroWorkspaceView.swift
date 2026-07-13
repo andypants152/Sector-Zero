@@ -157,7 +157,15 @@ struct SectorZeroWorkspaceView: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.sectorBorder, lineWidth: 1)
+                    .allowsHitTesting(false)
             }
+            #if os(macOS)
+            .overlay {
+                // Topmost so clicks reach it and focus keyboard capture.
+                MachineKeyCaptureView(workspace: workspace)
+            }
+            .help("Click to send keystrokes to the machine")
+            #endif
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .aspectRatio(4.0 / 3.0, contentMode: .fit)
             .layoutPriority(1)

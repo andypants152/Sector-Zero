@@ -36,7 +36,7 @@ final class CGATextModeAdapter: MemoryMappedDevice, IOPortDevice, ClockedDevice 
     private static let horizontalCharacterClocks = 304
     private static let horizontalDisplayClocks = 256
 
-    private var videoMemory = Array(repeating: UInt8(0), count: Int(memoryRange.count))
+    private var videoMemory = CGATextModeAdapter.blankVideoMemory()
     private var crtcRegisters = Array(repeating: UInt8(0), count: 0x20)
     private var selectedCRTCRegister: UInt8 = 0
     private(set) var modeControl: UInt8 = 0
@@ -70,12 +70,25 @@ final class CGATextModeAdapter: MemoryMappedDevice, IOPortDevice, ClockedDevice 
     }
 
     func reset() {
-        videoMemory = Array(repeating: 0, count: videoMemory.count)
+        videoMemory = Self.blankVideoMemory()
         crtcRegisters = Array(repeating: 0, count: crtcRegisters.count)
         selectedCRTCRegister = 0
         modeControl = 0
         colorSelect = 0
         frameClock = 0
+    }
+
+    /// Hardware CGA RAM has undefined power-on contents. Use ordinary blank
+    /// text cells for the emulator's deterministic reset state so firmware
+    /// that enables text mode before clearing the screen does not expose a
+    /// synthetic wall of unsupported code-point glyphs.
+    private static func blankVideoMemory() -> [UInt8] {
+        var memory = Array(repeating: UInt8(0), count: Int(memoryRange.count))
+        for byteAddress in stride(from: 0, to: memory.count, by: 2) {
+            memory[byteAddress] = 0x20
+            memory[byteAddress + 1] = 0x07
+        }
+        return memory
     }
 
     func advance(by clocks: Int) {

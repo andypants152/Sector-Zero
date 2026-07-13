@@ -92,6 +92,7 @@ final class EmulatorBus: Bus {
     private let memory: Memory
     let interruptController = ProgrammableInterruptController()
     let intervalTimer: ProgrammableIntervalTimer
+    let peripheralInterface: ProgrammablePeripheralInterface
     let cgaAdapter = CGATextModeAdapter()
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
@@ -111,7 +112,12 @@ final class EmulatorBus: Bus {
 
     init(memory: Memory, installPCMemoryMap: Bool = true) {
         self.memory = memory
-        self.intervalTimer = ProgrammableIntervalTimer(interruptController: interruptController)
+        let intervalTimer = ProgrammableIntervalTimer(interruptController: interruptController)
+        self.intervalTimer = intervalTimer
+        self.peripheralInterface = ProgrammablePeripheralInterface(
+            interruptController: interruptController,
+            intervalTimer: intervalTimer
+        )
         if installPCMemoryMap {
             precondition(memory.size >= Memory.addressableSize, "PC memory map requires 1 MiB of backing storage")
             try! mapRAM(Self.conventionalRAMRange, name: "Conventional RAM")
@@ -122,7 +128,7 @@ final class EmulatorBus: Bus {
         }
         mapPortDevice(interruptController, to: ProgrammableInterruptController.commandPort...ProgrammableInterruptController.dataPort)
         mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.channel0Port...ProgrammableIntervalTimer.controlPort)
-        mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.systemControlPort...ProgrammableIntervalTimer.systemControlPort)
+        mapPortDevice(peripheralInterface, to: ProgrammablePeripheralInterface.portA...ProgrammablePeripheralInterface.controlPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.crtcIndexPort...CGATextModeAdapter.crtcDataPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.modeControlPort...CGATextModeAdapter.statusPort)
     }

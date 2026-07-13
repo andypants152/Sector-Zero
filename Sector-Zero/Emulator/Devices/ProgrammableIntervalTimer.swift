@@ -35,7 +35,6 @@ final class ProgrammableIntervalTimer: ClockedDevice, IOPortDevice {
     static let channel1Port: UInt16 = 0x41
     static let channel2Port: UInt16 = 0x42
     static let controlPort: UInt16 = 0x43
-    static let systemControlPort: UInt16 = 0x61
     static let cpuClocksPerInputTick = 4
 
     private struct Channel {
@@ -271,13 +270,6 @@ final class ProgrammableIntervalTimer: ClockedDevice, IOPortDevice {
         if let channel = channelIndex(for: port) {
             return channels[channel].read()
         }
-        if port == Self.systemControlPort {
-            var value: UInt8 = 0
-            if channels[2].gate { value |= 0x01 }
-            if channel2SpeakerEnabled { value |= 0x02 }
-            if channels[2].output { value |= 0x20 }
-            return value
-        }
         return 0xFF
     }
 
@@ -291,15 +283,24 @@ final class ProgrammableIntervalTimer: ClockedDevice, IOPortDevice {
             }
             return
         }
-        switch port {
-        case Self.controlPort:
+        if port == Self.controlPort {
             writeControl(value)
-        case Self.systemControlPort:
-            channels[2].setGate(value & 0x01 != 0)
-            channel2SpeakerEnabled = value & 0x02 != 0
-        default:
-            break
         }
+    }
+
+    // The PC wires channel 2's gate, speaker enable, and output through the
+    // PPI's port B/C (M45); these are the PPI-facing control points.
+
+    func setChannel2Gate(_ enabled: Bool) {
+        channels[2].setGate(enabled)
+    }
+
+    func setChannel2SpeakerEnabled(_ enabled: Bool) {
+        channel2SpeakerEnabled = enabled
+    }
+
+    var channel2Output: Bool {
+        channels[2].output
     }
 
     private func writeControl(_ value: UInt8) {

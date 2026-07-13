@@ -55,8 +55,16 @@ struct CPUInspectorView: View {
             valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip))
             valueRow(name: "PHYS", value: String(format: "%05X", state.physicalCodeAddress))
             valueRow(name: "OPC", value: cpu.lastFetchedOpcodeText)
+            valueRow(name: "KBD", value: keyboardText)
             stateRow
         }
+    }
+
+    /// Latched scan code and pending queue depth, e.g. "1E +2" or "-- +0".
+    private var keyboardText: String {
+        let ppi = state.peripheralInterface
+        let latched = ppi.latchedScanCode.map { String(format: "%02X", $0) } ?? "--"
+        return "\(latched) +\(ppi.pendingScanCodeCount)"
     }
 
     private var stateRow: some View {

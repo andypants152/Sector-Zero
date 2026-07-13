@@ -125,29 +125,31 @@ struct PortIOTests {
 
     @Test("Immediate-port OUT transfers AL/AX without changing registers or flags")
     func immediateOutput() {
-        let byteMachine = machineWithOpcodes([0xE6, 0x60])
+        // Ports 70h/72h are scratch space here; 60h–63h belong to the PPI
+        // since M45 and the bus rejects overlapping mappings.
+        let byteMachine = machineWithOpcodes([0xE6, 0x70])
         let byteDevice = SpyPortDevice()
-        byteMachine.bus.mapPortDevice(byteDevice, to: 0x0060...0x0060)
+        byteMachine.bus.mapPortDevice(byteDevice, to: 0x0070...0x0070)
         setRegisters(ax: 0xCAFE, dx: 0x1234, on: byteMachine)
         let byteFlags = setStableFlags(on: byteMachine)
 
         byteMachine.step()
 
-        #expect(byteDevice.events == [.writeByte(0x0060, 0xFE)])
+        #expect(byteDevice.events == [.writeByte(0x0070, 0xFE)])
         #expect(byteMachine.cpu.ax == 0xCAFE)
         #expect(byteMachine.cpu.dx == 0x1234)
         #expect(byteMachine.cpu.flags.rawValue == byteFlags)
         #expect(byteMachine.cycleCount == 10)
 
-        let wordMachine = machineWithOpcodes([0xE7, 0x62])
+        let wordMachine = machineWithOpcodes([0xE7, 0x72])
         let wordDevice = SpyPortDevice()
-        wordMachine.bus.mapPortDevice(wordDevice, to: 0x0062...0x0062)
+        wordMachine.bus.mapPortDevice(wordDevice, to: 0x0072...0x0072)
         setRegisters(ax: 0xCAFE, dx: 0x5678, on: wordMachine)
         let wordFlags = setStableFlags(on: wordMachine)
 
         wordMachine.step()
 
-        #expect(wordDevice.events == [.writeWord(0x0062, 0xCAFE)])
+        #expect(wordDevice.events == [.writeWord(0x0072, 0xCAFE)])
         #expect(wordMachine.cpu.ax == 0xCAFE)
         #expect(wordMachine.cpu.dx == 0x5678)
         #expect(wordMachine.cpu.flags.rawValue == wordFlags)

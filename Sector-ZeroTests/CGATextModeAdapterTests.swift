@@ -55,6 +55,24 @@ struct CGATextModeAdapterTests {
         #expect(!brightBackground.blink)
     }
 
+    @Test("Text mode starts with deterministic blank cells")
+    func blankResetState() {
+        let machine = Machine()
+        enableText(bus: machine.bus)
+
+        let firstCell = machine.snapshot().video.cells[0]
+        let lastCell = machine.snapshot().video.cells[1_999]
+        #expect(firstCell.codePoint == UInt8(ascii: " "))
+        #expect(firstCell.foreground == .lightGray)
+        #expect(firstCell.background == .black)
+        #expect(lastCell == firstCell)
+
+        machine.bus.writeByte(UInt8(ascii: "X"), at: 0xB8000)
+        machine.reset()
+        machine.bus.writeIOByte(0x09, at: 0x3D8)
+        #expect(machine.snapshot().video.cells[0].codePoint == UInt8(ascii: " "))
+    }
+
     @Test("CRTC start and cursor registers are cell addresses relative to the visible page")
     func crtcCursorRegisters() {
         let machine = Machine()

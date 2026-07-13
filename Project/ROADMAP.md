@@ -654,7 +654,7 @@ every intentional deviation in a machine-profile document before M41.
   preservation across mode changes, and a palette/glyph visual fixture.
   Graphics modes and composite artifact color remain deferred.
 
-### M45 — Keyboard/PPI input path
+### M45 — Keyboard/PPI input path ✅
 - **Goal:** Deliver host keystrokes through PC-compatible hardware rather than
   directly into a console model.
 - **Build:** Add the minimal 8255/PPI-compatible ports and keyboard scan-code
@@ -664,6 +664,32 @@ every intentional deviation in a machine-profile document before M41.
   nondeterministic in tests.
 - **Tests:** Make/break scan codes, modifiers, queue ordering/overflow policy,
   IRQ1 masking and acknowledgement, deterministic repeat, reset, and focus loss.
+- **Completed:** The bus installs an XT-configuration 8255 PPI at ports
+  60h–63h: port A latches keyboard scan codes, port B carries the keyboard
+  clear/clock and speaker bits (gate and speaker-enable delegate to the PIT,
+  which no longer maps 61h itself), port C mirrors timer-2 output, and the
+  control register stores the XT operating mode. Scan codes queue behind the
+  latch (capacity 16; overflow drops the newest and counts an overrun, never
+  reordering earlier keystrokes). Delivery raises IRQ1; the port B bit-7
+  pulse acknowledges the latch and redelivers the next code with a fresh
+  edge. The authentic XT deadlock — a code latched before PIC initialization
+  loses its edge and blocks the queue until POST's keyboard-clear pulse — is
+  reproduced and pinned by a test. `Machine.postScanCode` is a lock-protected
+  host inbox drained at instruction boundaries, so keystrokes are thread-safe
+  against the execution queue and can wake HLT inside a running slice; idle
+  workspaces drain explicitly. The workspace translates macOS virtual key
+  codes to scan-code set 1 (83-key XT layout: keypad arrows, no E0
+  extensions), forwards typematic repeats as extra makes, suppresses break
+  codes for filtered host chords (⌘R), and releases all held keys on focus
+  loss. A key-capture NSView over the CRT delivers raw keyDown/keyUp/
+  flagsChanged events and treats Caps Lock toggles as make/break pairs; the
+  inspector gains a KBD row (latched code + queue depth). **Deviation:** port
+  B resets to 40h (keyboard clock enabled) instead of the 8255's all-zero
+  reset so firmware-less machines still receive keystrokes. Verified in-app
+  with the checked-in demo firmware: it clears CGA text memory, prints a boot
+  greeting, then translates unshifted scan-code set 1 input to ASCII while
+  exercising a guest-programmed PIC, one IRQ1 per keystroke, the 60h/61h
+  handshake, EOI, and live CGA output while running.
 
 ### M46 — 8237-compatible DMA subset
 - **Goal:** Establish the transfer mechanism required by a PC floppy controller.

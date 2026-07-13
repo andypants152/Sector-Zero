@@ -47,6 +47,7 @@ final class SectorZeroWorkspace {
     var currentProject: SectorZeroProject?
     var recentProjects: [RecentProject]
     var errorMessage: String?
+    private(set) var pressedScanCodes: Set<UInt8> = []
     let machine: Machine
     private(set) var machineSnapshot: MachineSnapshot
     private(set) var isRunning = false
@@ -192,6 +193,44 @@ final class SectorZeroWorkspace {
         guard !isRunning else { return }
         machine.reset()
         lastRunStopReason = nil
+        apply(machine.snapshot())
+    }
+
+    /// Translates one host key transition into XT scan codes and posts them
+    /// to the machine. Typematic repeats forward extra make codes, matching
+    /// the XT keyboard's own repeat stream. Unmapped keys are ignored.
+    func handleHostKey(down: Bool, keyCode: UInt16, isRepeat: Bool = false) {
+        guard let makeCode = PCKeyMap.makeCode(forMacKeyCode: keyCode) else { return }
+        if down {
+            pressedScanCodes.insert(makeCode)
+            machine.postScanCode(makeCode)
+        } else {
+            // Only keys this workspace pressed get a break code; the up half
+            // of a filtered host chord (⌘R) must not leak into the guest.
+            guard pressedScanCodes.remove(makeCode) != nil else { return }
+            machine.postScanCode(makeCode | 0x80)
+        }
+        deliverHostInputIfIdle()
+    }
+
+    /// Releases every held key — called on focus loss so the machine never
+    /// sees a key stuck down. Break codes go out lowest-first so the stream
+    /// is deterministic.
+    func releaseAllHostKeys() {
+        guard !pressedScanCodes.isEmpty else { return }
+        for makeCode in pressedScanCodes.sorted() {
+            machine.postScanCode(makeCode | 0x80)
+        }
+        pressedScanCodes.removeAll()
+        deliverHostInputIfIdle()
+    }
+
+    /// While the machine is idle the main actor is its only executor, so
+    /// posted codes are delivered immediately and the snapshot republished;
+    /// while running, the execution queue drains them at boundaries.
+    private func deliverHostInputIfIdle() {
+        guard !isRunning else { return }
+        machine.drainHostInput()
         apply(machine.snapshot())
     }
 

@@ -11,6 +11,29 @@ private struct SuspendedRepeat {
     let continuationIP: UInt16
 }
 
+/// Thread-safe mailbox for raw scan-code bytes. UI threads post; the
+/// execution context drains at instruction boundaries, so the PPI and PIC
+/// are only ever mutated from the thread running the machine.
+private final class HostScanCodeInbox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var codes: [UInt8] = []
+
+    func post(_ code: UInt8) {
+        lock.withLock { codes.append(code) }
+    }
+
+    func drain() -> [UInt8] {
+        lock.withLock {
+            defer { codes.removeAll(keepingCapacity: true) }
+            return codes
+        }
+    }
+
+    func clear() {
+        lock.withLock { codes.removeAll() }
+    }
+}
+
 enum MachineRunStopReason: Equatable, Sendable {
     case instructionLimit
     case paused
@@ -40,6 +63,7 @@ final class Machine {
     private var stackSegmentShadow = 0
     private var suspendedRepeat: SuspendedRepeat?
     private var clockedDevices: [any ClockedDevice] = []
+    private let hostScanCodes = HostScanCodeInbox()
 
     init(memory: Memory = Memory()) {
         self.memory = memory
@@ -81,8 +105,26 @@ final class Machine {
         maskableShadow = 0
         stackSegmentShadow = 0
         suspendedRepeat = nil
+        hostScanCodes.clear()
+        bus.peripheralInterface.reset()
         for device in clockedDevices {
             device.reset()
+        }
+    }
+
+    /// Posts one raw XT scan-code byte from any thread. The byte reaches the
+    /// PPI at the next instruction boundary of whichever context is running
+    /// the machine (see `drainHostInput`).
+    func postScanCode(_ code: UInt8) {
+        hostScanCodes.post(code)
+    }
+
+    /// Feeds posted scan codes to the PPI. Runs automatically at every
+    /// step/run boundary; idle callers (a paused workspace) may invoke it
+    /// directly since they are the machine's only executor at that moment.
+    func drainHostInput() {
+        for code in hostScanCodes.drain() {
+            bus.peripheralInterface.receiveScanCode(code)
         }
     }
 
@@ -140,6 +182,7 @@ final class Machine {
     /// fetch → decode → execute; REP may suspend after a completed iteration.
     @discardableResult
     func step() -> Int {
+        drainHostInput()
         let start = cycleCount
         stepBoundary()
         return Int(cycleCount - start)
@@ -252,6 +295,9 @@ final class Machine {
         var stopReason: MachineRunStopReason = .instructionLimit
 
         while executedBoundaries < maxInstructions {
+            // Drain before the halt check so a keystroke can raise IRQ1 and
+            // wake a halted CPU inside a running slice.
+            drainHostInput()
             if shouldPause() {
                 stopReason = .paused
                 break
@@ -462,6 +508,7 @@ final class Machine {
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
             interruptController: interruptController.snapshot,
             intervalTimer: intervalTimer.snapshot,
+            peripheralInterface: bus.peripheralInterface.snapshot,
             video: cgaAdapter.snapshot
         )
     }
