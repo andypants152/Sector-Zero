@@ -272,6 +272,14 @@ enum ALU {
 }
 
 extension CPUFlags {
+    /// Replaces the byte-result status flags while preserving AF, CF and OF.
+    /// AAM/AAD define only SF/ZF/PF; DAA/DAS use this after setting AF/CF.
+    mutating func applySignZeroParity(_ result: UInt8) {
+        self[.parity] = result.nonzeroBitCount.isMultiple(of: 2)
+        self[.zero] = result == 0
+        self[.sign] = result & 0x80 != 0
+    }
+
     /// Applies an ALU result's flags, leaving control flags (TF/IF/DF) alone.
     mutating func applyArithmetic(_ flags: ArithmeticFlags) {
         self[.carry] = flags.carry

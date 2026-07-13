@@ -61,6 +61,12 @@ enum Instruction: Equatable {
     case clearFlag(CPUFlag)
     case setFlag(CPUFlag)
     case complementCarry
+    case decimalAdjustAfterAddition
+    case decimalAdjustAfterSubtraction
+    case asciiAdjustAfterAddition
+    case asciiAdjustAfterSubtraction
+    case asciiAdjustAfterMultiply(base: UInt8)
+    case asciiAdjustBeforeDivision(base: UInt8)
     case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case testImmediateRM8(destination: ModRMOperand, immediate: UInt8, eaClocks: Int)

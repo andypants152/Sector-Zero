@@ -317,6 +317,33 @@ final class CPU8086 {
         case .complementCarry:
             flags[.carry].toggle()
             return 2
+        case .decimalAdjustAfterAddition:
+            executeDecimalAdjustAfterAddition()
+            return 4
+        case .decimalAdjustAfterSubtraction:
+            executeDecimalAdjustAfterSubtraction()
+            return 4
+        case .asciiAdjustAfterAddition:
+            executeASCIIAdjustAfterAddition()
+            return 4
+        case .asciiAdjustAfterSubtraction:
+            executeASCIIAdjustAfterSubtraction()
+            return 4
+        case .asciiAdjustAfterMultiply(let base):
+            guard base != 0 else {
+                raiseDivideError()
+                return 83
+            }
+            let source = registers[.al]
+            registers[.ah] = source / base
+            registers[.al] = source % base
+            flags.applySignZeroParity(registers[.al])
+            return 83
+        case .asciiAdjustBeforeDivision(let base):
+            registers[.al] = registers[.ah] &* base &+ registers[.al]
+            registers[.ah] = 0
+            flags.applySignZeroParity(registers[.al])
+            return 60
         case .shiftRotate8(let operation, let destination, let countSource, let eaClocks):
             let count: UInt8 = countSource == .one ? 1 : registers[.cl]
             let outcome = ALU.shiftRotate8(
@@ -820,6 +847,71 @@ final class CPU8086 {
     private func applyMultiplyFlags(_ hasSignificantHighHalf: Bool) {
         flags[.carry] = hasSignificantHighHalf
         flags[.overflow] = hasSignificantHighHalf
+    }
+
+    /// DAA/DAS define AF and CF from the two decimal corrections, and SF/ZF/PF
+    /// from the final AL. OF is undefined on the 8086, so it is preserved.
+    private func executeDecimalAdjustAfterAddition() {
+        let original = registers[.al]
+        let originalCarry = flags[.carry]
+        let lowCorrection = original & 0x0F > 9 || flags[.auxiliaryCarry]
+
+        if lowCorrection {
+            registers[.al] &+= 0x06
+        }
+        flags[.auxiliaryCarry] = lowCorrection
+
+        let highCorrection = original > 0x99 || originalCarry
+        if highCorrection {
+            registers[.al] &+= 0x60
+        }
+        flags[.carry] = highCorrection
+        flags.applySignZeroParity(registers[.al])
+    }
+
+    private func executeDecimalAdjustAfterSubtraction() {
+        let original = registers[.al]
+        let originalCarry = flags[.carry]
+        let lowCorrection = original & 0x0F > 9 || flags[.auxiliaryCarry]
+
+        if lowCorrection {
+            registers[.al] &-= 0x06
+        }
+        flags[.auxiliaryCarry] = lowCorrection
+
+        let highCorrection = original > 0x99 || originalCarry
+        if highCorrection {
+            registers[.al] &-= 0x60
+        }
+        flags[.carry] = highCorrection
+        flags.applySignZeroParity(registers[.al])
+    }
+
+    /// The original 8086 corrects AL and AH separately. Later processors act
+    /// like AX +/- 0106h, which differs for invalid unpacked-BCD inputs when
+    /// the AL correction itself carries or borrows.
+    private func executeASCIIAdjustAfterAddition() {
+        let correction = registers[.al] & 0x0F > 9 || flags[.auxiliaryCarry]
+        if correction {
+            registers[.al] &+= 0x06
+            registers[.ah] &+= 1
+        }
+        registers[.al] &= 0x0F
+        flags[.auxiliaryCarry] = correction
+        flags[.carry] = correction
+        // OF/SF/ZF/PF are undefined and deliberately preserved.
+    }
+
+    private func executeASCIIAdjustAfterSubtraction() {
+        let correction = registers[.al] & 0x0F > 9 || flags[.auxiliaryCarry]
+        if correction {
+            registers[.al] &-= 0x06
+            registers[.ah] &-= 1
+        }
+        registers[.al] &= 0x0F
+        flags[.auxiliaryCarry] = correction
+        flags[.carry] = correction
+        // OF/SF/ZF/PF are undefined and deliberately preserved.
     }
 
     private func raiseDivideError() {

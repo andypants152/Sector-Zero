@@ -367,6 +367,20 @@ struct InstructionDecoder {
             return .loadStatusFlagsIntoAH
         case 0xF5:
             return .complementCarry
+        case 0x27:
+            return .decimalAdjustAfterAddition
+        case 0x2F:
+            return .decimalAdjustAfterSubtraction
+        case 0x37:
+            return .asciiAdjustAfterAddition
+        case 0x3F:
+            return .asciiAdjustAfterSubtraction
+        case 0xD4:
+            // Assemblers normally emit base 10, but original 8086 silicon
+            // consumes and uses the encoded byte for any base.
+            return .asciiAdjustAfterMultiply(base: nextByte())
+        case 0xD5:
+            return .asciiAdjustBeforeDivision(base: nextByte())
         case 0xF8:
             return .clearFlag(.carry)
         case 0xF9:

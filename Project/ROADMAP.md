@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M35 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M36 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -19,7 +19,8 @@ JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
-CPU-generated, NMI, and maskable interrupt delivery). The next milestone is M36 below.
+CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII
+adjust). The next milestone is M37 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment and
@@ -460,7 +461,7 @@ matrix introduced in M39 is the CPU-completion gate.
   STI/SS shadows, HLT remaining asleep without an accepted interrupt, NMI wake,
   interrupt and resume midway through REP, and nested IRET recovery.
 
-### M36 — Decimal and ASCII adjust (0x27, 0x2F, 0x37, 0x3F, 0xD4–0xD5)
+### M36 — Decimal and ASCII adjust (0x27, 0x2F, 0x37, 0x3F, 0xD4–0xD5) ✅
 - **Goal:** Cover the 8086's BCD/ASCII arithmetic used by early software.
 - **Build:** DAA, DAS, AAA, AAS, AAM, and AAD with explicit per-instruction flag
   rules. AAM's encoded base byte must be consumed (normally 10); a zero base
@@ -470,6 +471,12 @@ matrix introduced in M39 is the CPU-completion gate.
 - **Tests:** Intel examples, all AF/CF input combinations for DAA/DAS, carry and
   no-carry AAA/AAS, non-decimal AAM/AAD bases, base-zero fault, and unchanged or
   deterministic undefined flags.
+- **Completed policy:** Architecturally undefined flags are preserved. AAA/AAS
+  use the original 8086's separate AL correction and AH increment/decrement,
+  including the edge behavior that differs from later processors. AAM/AAD
+  consume and use the encoded base byte; AAM base zero enters vector 0 with AX
+  intact and the following IP in the interrupt frame. Timings are 4 clocks for
+  DAA/DAS/AAA/AAS, 83 for AAM, and 60 for AAD.
 
 ### M37 — Sign extension, XLAT, and translation helpers (0x98–0x99, 0xD7)
 - **Goal:** Finish the small but common data-conversion instructions.
