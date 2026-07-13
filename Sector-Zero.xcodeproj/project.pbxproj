@@ -6,11 +6,22 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		985A77B13004AA67006B2622 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 985A77443004587E006B2622 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 985A774B3004587E006B2622;
+			remoteInfo = "Sector-Zero";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		985A774C3004587E006B2622 /* Sector-Zero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Sector-Zero.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		985A777E30045DE8006B2622 /* SectorZeroProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroProject.swift; sourceTree = "<group>"; };
 		985A777F30045E00006B2622 /* SectorZeroProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroProjectStore.swift; sourceTree = "<group>"; };
 		985A778130045E10006B2622 /* SectorZeroWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroWorkspace.swift; sourceTree = "<group>"; };
+		985A77AD3004AA67006B2622 /* Sector-ZeroTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Sector-ZeroTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -19,10 +30,22 @@
 			path = "Sector-Zero";
 			sourceTree = "<group>";
 		};
+		985A77AE3004AA67006B2622 /* Sector-ZeroTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Sector-ZeroTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		985A77493004587E006B2622 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		985A77AA3004AA67006B2622 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -36,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				985A774E3004587E006B2622 /* Sector-Zero */,
+				985A77AE3004AA67006B2622 /* Sector-ZeroTests */,
 				985A774D3004587E006B2622 /* Products */,
 				985A777D30045DE8006B2622 /* Project */,
 				985A778030045E10006B2622 /* Workspace */,
@@ -46,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				985A774C3004587E006B2622 /* Sector-Zero.app */,
+				985A77AD3004AA67006B2622 /* Sector-ZeroTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -92,6 +117,29 @@
 			productReference = 985A774C3004587E006B2622 /* Sector-Zero.app */;
 			productType = "com.apple.product-type.application";
 		};
+		985A77AC3004AA67006B2622 /* Sector-ZeroTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 985A77B33004AA67006B2622 /* Build configuration list for PBXNativeTarget "Sector-ZeroTests" */;
+			buildPhases = (
+				985A77A93004AA67006B2622 /* Sources */,
+				985A77AA3004AA67006B2622 /* Frameworks */,
+				985A77AB3004AA67006B2622 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				985A77B23004AA67006B2622 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				985A77AE3004AA67006B2622 /* Sector-ZeroTests */,
+			);
+			name = "Sector-ZeroTests";
+			packageProductDependencies = (
+			);
+			productName = "Sector-ZeroTests";
+			productReference = 985A77AD3004AA67006B2622 /* Sector-ZeroTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -104,6 +152,10 @@
 				TargetAttributes = {
 					985A774B3004587E006B2622 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					985A77AC3004AA67006B2622 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = 985A774B3004587E006B2622;
 					};
 				};
 			};
@@ -122,12 +174,20 @@
 			projectRoot = "";
 			targets = (
 				985A774B3004587E006B2622 /* Sector-Zero */,
+				985A77AC3004AA67006B2622 /* Sector-ZeroTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		985A774A3004587E006B2622 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		985A77AB3004AA67006B2622 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -144,7 +204,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		985A77A93004AA67006B2622 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		985A77B23004AA67006B2622 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 985A774B3004587E006B2622 /* Sector-Zero */;
+			targetProxy = 985A77B13004AA67006B2622 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		985A77573004587F006B2622 /* Debug */ = {
@@ -276,6 +351,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -286,10 +362,10 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "xyz.andypants.Sector-Zero";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -303,7 +379,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.5;
+				XROS_DEPLOYMENT_TARGET = 1.0;
 			};
 			name = Debug;
 		};
@@ -320,6 +396,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -330,10 +407,10 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "xyz.andypants.Sector-Zero";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -347,7 +424,59 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.5;
+				XROS_DEPLOYMENT_TARGET = 1.0;
+			};
+			name = Release;
+		};
+		985A77B43004AA67006B2622 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5YW6Y5B485;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "xyz.andypants.Sector-ZeroTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sector-Zero.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sector-Zero";
+				XROS_DEPLOYMENT_TARGET = 1.0;
+			};
+			name = Debug;
+		};
+		985A77B53004AA67006B2622 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5YW6Y5B485;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "xyz.andypants.Sector-ZeroTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sector-Zero.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sector-Zero";
+				XROS_DEPLOYMENT_TARGET = 1.0;
 			};
 			name = Release;
 		};
@@ -368,6 +497,15 @@
 			buildConfigurations = (
 				985A775A3004587F006B2622 /* Debug */,
 				985A775B3004587F006B2622 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		985A77B33004AA67006B2622 /* Build configuration list for PBXNativeTarget "Sector-ZeroTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				985A77B43004AA67006B2622 /* Debug */,
+				985A77B53004AA67006B2622 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
