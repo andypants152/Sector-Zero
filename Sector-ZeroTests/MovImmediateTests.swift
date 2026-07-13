@@ -12,12 +12,7 @@ struct MovImmediateTests {
 
     private func machineWithOpcodes(_ opcodes: [UInt8]) -> Machine {
         let machine = Machine()
-        for (offset, opcode) in opcodes.enumerated() {
-            // Programs longer than 16 bytes run past the top of the 1 MB
-            // space; wrap exactly as the fetch's physical address mask does.
-            let address = (resetVector + UInt32(offset)) & AddressTranslator.physicalAddressMask
-            machine.bus.writeByte(opcode, at: address)
-        }
+        try! machine.bus.loadBytes(opcodes, at: resetVector)
         return machine
     }
 

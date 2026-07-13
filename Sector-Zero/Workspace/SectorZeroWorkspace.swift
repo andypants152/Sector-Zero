@@ -54,7 +54,7 @@ final class SectorZeroWorkspace {
     func step() {
         guard !isRunning else { return }
         machine.step()
-        machineSnapshot = machine.snapshot()
+        apply(machine.snapshot())
     }
 
     var runButtonTitle: String {
@@ -106,16 +106,23 @@ final class SectorZeroWorkspace {
         guard !isRunning else { return }
         machine.reset()
         lastRunStopReason = nil
-        machineSnapshot = machine.snapshot()
+        apply(machine.snapshot())
     }
 
     private func publish(_ result: MachineRunSlice, for runID: UUID) {
         guard activeRunID == runID else { return }
-        machineSnapshot = result.snapshot
+        apply(result.snapshot)
         guard result.stopReason != .instructionLimit else { return }
         lastRunStopReason = result.stopReason
         isRunning = false
         activeRunID = nil
+    }
+
+    private func apply(_ snapshot: MachineSnapshot) {
+        machineSnapshot = snapshot
+        if let violation = snapshot.lastMemoryMapError {
+            errorMessage = violation.localizedDescription
+        }
     }
 
     var windowTitle: String {
@@ -138,8 +145,7 @@ final class SectorZeroWorkspace {
     func createProject(named projectName: String, in destinationFolderURL: URL) -> Bool {
         do {
             let project = try SectorZeroProjectStore.createProject(named: projectName, in: destinationFolderURL)
-            open(project)
-            return true
+            return open(project)
         } catch {
             errorMessage = error.localizedDescription
             return false
@@ -150,8 +156,7 @@ final class SectorZeroWorkspace {
     func openProject(at url: URL) -> Bool {
         do {
             let project = try SectorZeroProjectStore.openProject(at: url)
-            open(project)
-            return true
+            return open(project)
         } catch {
             errorMessage = error.localizedDescription
             return false
@@ -178,10 +183,23 @@ final class SectorZeroWorkspace {
         }
     }
 
-    private func open(_ project: SectorZeroProject) {
+    @discardableResult
+    private func open(_ project: SectorZeroProject) -> Bool {
+        do {
+            if let firmwareURL = project.configuredFirmwareURL {
+                try machine.loadSystemROM(Data(contentsOf: firmwareURL))
+            } else {
+                machine.clearSystemROM()
+            }
+            apply(machine.snapshot())
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
         currentProject = project
         errorMessage = nil
         remember(project)
+        return true
     }
 
     private func remember(_ project: SectorZeroProject) {

@@ -8,4 +8,8 @@ struct MachineSnapshot: Equatable, Sendable {
     let cpu: CPUStateSnapshot
     let cycleCount: UInt64
     let physicalCodeAddress: UInt32
+    let memoryRegions: [MemoryRegionSnapshot]
+    let loadedSystemROMByteCount: Int
+    let lastMemoryMapError: MemoryMapError?
+    let rejectedROMWriteCount: Int
 }

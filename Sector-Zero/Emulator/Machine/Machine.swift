@@ -16,6 +16,7 @@ enum MachineRunStopReason: Equatable, Sendable {
     case paused
     case halted
     case waitingForCoprocessor
+    case memoryMapViolation(MemoryMapError)
     case fault(CPUFault)
 }
 
@@ -27,7 +28,7 @@ struct MachineRunSlice: Equatable, Sendable {
 }
 
 final class Machine {
-    let memory: Memory
+    private let memory: Memory
     let bus: EmulatorBus
     let cpu: CPU8086
     private let clock: ExecutionClock
@@ -57,6 +58,7 @@ final class Machine {
     }
 
     func reset() {
+        bus.resetMemoryMapDiagnostics()
         cpu.reset()
         clock.reset()
         pendingNMI = false
@@ -68,6 +70,16 @@ final class Machine {
         for device in clockedDevices {
             device.reset()
         }
+    }
+
+    func loadSystemROM(_ image: Data) throws {
+        try bus.loadSystemROM(image)
+        reset()
+    }
+
+    func clearSystemROM() {
+        bus.clearSystemROM()
+        reset()
     }
 
     func attachClockedDevice(_ device: any ClockedDevice) {
@@ -222,6 +234,10 @@ final class Machine {
                 stopReason = .paused
                 break
             }
+            if let violation = bus.lastMemoryMapError {
+                stopReason = .memoryMapViolation(violation)
+                break
+            }
             if let fault = cpu.fault {
                 stopReason = .fault(fault)
                 break
@@ -239,7 +255,9 @@ final class Machine {
         }
 
         if stopReason == .instructionLimit {
-            if let fault = cpu.fault {
+            if let violation = bus.lastMemoryMapError {
+                stopReason = .memoryMapViolation(violation)
+            } else if let fault = cpu.fault {
                 stopReason = .fault(fault)
             } else if cpu.halted && !hasWakeableInterrupt {
                 stopReason = .halted
@@ -409,7 +427,11 @@ final class Machine {
         MachineSnapshot(
             cpu: cpu.dumpState(),
             cycleCount: cycleCount,
-            physicalCodeAddress: currentCodeAddress
+            physicalCodeAddress: currentCodeAddress,
+            memoryRegions: bus.memoryMapSnapshot,
+            loadedSystemROMByteCount: bus.loadedSystemROMByteCount,
+            lastMemoryMapError: bus.lastMemoryMapError,
+            rejectedROMWriteCount: bus.rejectedROMWriteCount
         )
     }
 }

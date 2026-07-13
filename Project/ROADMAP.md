@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M40 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M41 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -21,8 +21,9 @@ indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
 CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
 sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
-completion policy; deterministic device scheduling and run/pause slices). The
-next milestone is M41 below.
+completion policy; deterministic device scheduling and run/pause slices; PC
+physical memory map, protected system ROM, and project firmware loading). The
+next milestone is M42 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -560,7 +561,7 @@ every intentional deviation in a machine-profile document before M41.
   RUN/PAUSE state while disabling STEP. Scheduler and workspace tests cover
   device totals, interrupt wakeup, bounds, pause, reset, and UI-facing state.
 
-### M41 — PC memory map, ROM regions, and firmware loading
+### M41 — PC memory map, ROM regions, and firmware loading ✅
 - **Goal:** Replace flat writable RAM with a bus-owned address map suitable for
   firmware and adapters.
 - **Build:** Map conventional RAM, reserved adapter space, and read-only system
@@ -569,6 +570,20 @@ every intentional deviation in a machine-profile document before M41.
 - **Don't:** Put mapping policy in `Memory`; silently allow writes to ROM.
 - **Tests:** Region boundaries, ROM write protection, reset-vector fetch, word
   access across region and 1 MiB boundaries, overlap rejection, and snapshots.
+- **Completed:** `EmulatorBus` owns a wrapping 20-bit map with 640 KiB
+  conventional RAM, open adapter space at A0000h–EFFFFh, and protected 64 KiB
+  system ROM at F0000h–FFFFFh. Guest ROM writes are rejected with an observable
+  diagnostic; host image loading remains explicit for tests and configuration.
+  Firmware images from 1–64 KiB are validated and top-aligned over the reset
+  vector. Project packages now include a firmware folder and optional relative
+  or absolute firmware path, loaded and snapshotted when the app opens a
+  machine. Region metadata, ROM size, and write diagnostics are part of
+  `MachineSnapshot`; run slices stop and the workspace surfaces rejected guest
+  writes without inventing a CPU exception. Word writes retain 8086 byte-cycle
+  ordering at protection boundaries, so an allowed byte can commit even when
+  its ROM-side partner is rejected.
+- **Compatibility watch:** Real PCs ignore ROM writes; if firmware or DOS-era
+  memory probes hit this diagnostic, demote it from a run stop to passive state.
 
 ### M42 — 8259A-compatible programmable interrupt controller
 - **Goal:** Multiplex hardware IRQs onto the CPU's INTR input.

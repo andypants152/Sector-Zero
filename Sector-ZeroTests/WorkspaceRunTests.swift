@@ -8,9 +8,7 @@ struct WorkspaceRunTests {
 
     private func workspaceWithBytes(_ bytes: [UInt8]) -> SectorZeroWorkspace {
         let machine = Machine()
-        for (offset, byte) in bytes.enumerated() {
-            machine.bus.writeByte(byte, at: resetVector + UInt32(offset))
-        }
+        try! machine.bus.loadBytes(bytes, at: resetVector)
         return SectorZeroWorkspace(machine: machine)
     }
 

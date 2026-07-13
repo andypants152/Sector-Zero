@@ -13,9 +13,7 @@ struct ExecuteNOPTests {
 
     private func machineWithOpcodes(_ opcodes: [UInt8]) -> Machine {
         let machine = Machine()
-        for (offset, opcode) in opcodes.enumerated() {
-            machine.bus.writeByte(opcode, at: resetVector + UInt32(offset))
-        }
+        try! machine.bus.loadBytes(opcodes, at: resetVector)
         return machine
     }
 

@@ -8,10 +8,7 @@ struct UnaryGroupTests {
 
     private func machineWithOpcodes(_ opcodes: [UInt8]) -> Machine {
         let machine = Machine()
-        for (offset, opcode) in opcodes.enumerated() {
-            let address = (resetVector + UInt32(offset)) & AddressTranslator.physicalAddressMask
-            machine.bus.writeByte(opcode, at: address)
-        }
+        try! machine.bus.loadBytes(opcodes, at: resetVector)
         return machine
     }
 

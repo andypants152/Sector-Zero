@@ -39,12 +39,14 @@ enum SectorZeroProjectStore {
         let sourceFolderURL = packageURL.appendingPathComponent("src", isDirectory: true)
         let buildFolderURL = packageURL.appendingPathComponent("build", isDirectory: true)
         let diskFolderURL = packageURL.appendingPathComponent("disk", isDirectory: true)
+        let firmwareFolderURL = packageURL.appendingPathComponent("firmware", isDirectory: true)
         let now = Date()
 
         try fileManager.createDirectory(at: packageURL, withIntermediateDirectories: false)
         try fileManager.createDirectory(at: sourceFolderURL, withIntermediateDirectories: false)
         try fileManager.createDirectory(at: buildFolderURL, withIntermediateDirectories: false)
         try fileManager.createDirectory(at: diskFolderURL, withIntermediateDirectories: false)
+        try fileManager.createDirectory(at: firmwareFolderURL, withIntermediateDirectories: false)
 
         let project = SectorZeroProject(
             projectName: projectName,
@@ -75,6 +77,7 @@ enum SectorZeroProjectStore {
         project.buildFolderURL = packageURL.appendingPathComponent("build", isDirectory: true)
         project.diskImageURL = packageURL.appendingPathComponent("disk", isDirectory: true)
         project.lastOpenedDate = Date()
+        try FileManager.default.createDirectory(at: project.firmwareFolderURL, withIntermediateDirectories: true)
         try save(project)
         return project
     }
