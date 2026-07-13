@@ -14,7 +14,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), and M8 (ModR/M decoding) are complete and tested.
-All milestones in this batch are done — see "Beyond M8" for what's next.
+The next six milestones are M9–M14 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -129,11 +129,104 @@ length. Nothing consumes it yet; segment-override prefixes remain a follow-up.
 
 ---
 
-## Beyond M8
+## Next six milestones
 
-The natural continuation: MOV using ModR/M → ADD/SUB/CMP with flag updates →
-conditional jumps → stack ops (PUSH/POP/CALL/RET) → interrupts → BIOS → boot sector.
-The long arc from the project charter stays intact:
+### M9 — MOV r/m ↔ reg (0x88–0x8B)
+- **Goal:** First instructions to consume the M8 ModR/M machinery; first data
+  movement through memory.
+- **Build:** Decode and execute `88` (MOV r/m8, r8), `89` (MOV r/m16, r16),
+  `8A` (MOV r8, r/m8), `8B` (MOV r16, r/m16). Wire `ModRMDecoder` into
+  `InstructionDecoder` via the existing `nextByte` boundary. Resolve
+  `EffectiveAddress` → physical address using the *actual* DS/SS values through
+  `AddressTranslator`; memory word access is little-endian through the `Bus`.
+  Cycles: reg→reg **2**; memory forms use the documented base + EA time — start
+  with the manual's table (reg→mem 9+EA, mem→reg 8+EA) and a simple EA-cost
+  function; verify against a timing table.
+- **Don't:** Segment-override prefixes; MOV involving segment registers
+  (`8C`/`8E`); immediates to r/m (`C6`/`C7`).
+- **Tests:** all four opcode directions; reg↔reg for byte and word; memory
+  reads/writes land at segment:offset (seed DS/SS to non-zero values!);
+  little-endian word round-trip through memory; BP-based EA uses SS; flags
+  untouched; IP advances past ModR/M + displacement.
+
+### M10 — ALU flag engine + ADD (0x00–0x03)
+- **Goal:** Correct CF/PF/AF/ZF/SF/OF computation — the make-or-break machinery
+  for every arithmetic instruction that follows.
+- **Build:** A standalone, pure `ALU` (value semantics) with 8- and 16-bit
+  `add` returning `(result, flags-to-set)`; CPU applies them to `CPUFlags`.
+  Flag rules: CF = carry out; AF = carry out of bit 3; ZF/SF from result;
+  PF = even parity of the **low byte only**; OF = signed overflow
+  (carry-in≠carry-out of the top bit). Then decode/execute `00`–`03`
+  (ADD r/m↔reg, both widths and directions) reusing M9's operand plumbing.
+  Cycles: reg→reg **3**; memory forms per table.
+- **Don't:** ADC; immediate forms (`04`/`05`, `80`–`83`); INC/DEC.
+- **Tests:** exhaustive-ish ALU table tests — known vectors for each flag
+  (0xFF+1 byte: CF AF ZF PF set, OF clear; 0x7F+1: OF SF AF set, CF clear;
+  0x8000+0x8000 word: CF OF ZF…); PF ignores the high byte; end-to-end ADD
+  through registers and memory.
+
+### M11 — SUB and CMP (0x28–0x2B, 0x38–0x3B)
+- **Goal:** Subtraction flags plus the first instruction that only sets flags —
+  the gateway to conditional jumps.
+- **Build:** `ALU.subtract` (CF = borrow; AF = borrow into bit 3; OF = signed
+  overflow of minuend−subtrahend; ZF/SF/PF as usual). `28`–`2B` write the
+  result; `38`–`3B` (CMP) compute identically but **discard the result**,
+  updating only flags. Same ModR/M plumbing and timings as ADD.
+- **Don't:** SBB; NEG; immediate forms (`2C`/`2D`, `3C`/`3D`, `80`–`83`).
+- **Tests:** borrow vectors (0x00−1: CF SF PF AF set; 0x80−1 byte: OF set);
+  equal-operands CMP sets ZF and writes nothing; CMP leaves both operands and
+  memory untouched; SUB writes to registers and memory correctly.
+
+### M12 — Conditional jumps (0x70–0x7F) + JMP short (0xEB)
+- **Goal:** Control flow; the CPU can finally loop and branch on M10/M11 flags.
+- **Build:** Decode a signed 8-bit displacement (relative to the *next*
+  instruction, i.e. applied after IP passed the operand). Implement all sixteen
+  Jcc opcodes — JO/JNO, JB/JNB, JZ/JNZ, JBE/JNBE, JS/JNS, JP/JNP, JL/JNL,
+  JLE/JNLE — as flag predicates over `CPUFlags` (JL/JLE use SF≠OF), plus
+  unconditional `EB`. Cycles: **16** taken / **4** not taken; JMP short **15** —
+  verify against the timing table.
+- **Don't:** Near/far JMP with 16-bit or absolute operands; LOOP/JCXZ.
+- **Tests:** each predicate against hand-set flag states (both taken and not);
+  backward displacement (a CMP/JNZ countdown loop actually terminates);
+  forward skip over an instruction; IP wraparound on branch; cycle split
+  between taken/not-taken.
+
+### M13 — Stack: PUSH/POP reg (0x50–0x5F)
+- **Goal:** The stack discipline (SS:SP, decrement-before-write) that CALL/RET
+  and interrupts will build on.
+- **Build:** CPU stack helpers `push16`/`pop16`: PUSH decrements SP by 2 then
+  writes the word at SS:SP; POP reads then increments. Decode/execute
+  `50`–`57` (PUSH reg16) and `58`–`5F` (POP reg16) — the low three bits are the
+  register encoding, as with MOV-immediate. Cycles: PUSH **11**, POP **8** —
+  verify. Note the 8086 `PUSH SP` quirk (pushes the *already-decremented* SP);
+  match it and pin it with a test.
+- **Don't:** PUSH/POP of segment registers or r/m forms; PUSHF/POPF; any
+  stack-overflow detection.
+- **Tests:** PUSH writes at SS:SP−2 with SP updated (seed SS non-zero);
+  POP round-trips; LIFO order over several registers; SP wraparound at 0;
+  the PUSH SP quirk; flags untouched.
+
+### M14 — CALL/RET near (0xE8, 0xC3)
+- **Goal:** Subroutines — enough machinery to run real structured programs
+  within one code segment.
+- **Build:** `E8` CALL near-relative: fetch a 16-bit displacement, push the
+  return IP (address of the next instruction), then IP += disp (16-bit wrap).
+  `C3` RET near: pop IP. Reuses M13's stack helpers unchanged. Cycles: CALL
+  **19**, RET **16** — verify. After this, write the first end-to-end program
+  test: a called subroutine that computes something, returns, and HLTs.
+- **Don't:** Far CALL/RET (`9A`/`CB`), RET imm16 (`C2`), CALL r/m (`FF /2`).
+- **Tests:** CALL pushes the correct return address and lands at the target
+  (forward and backward); RET resumes after the CALL; nested calls unwind in
+  order; the end-to-end program leaves the expected register state and halt.
+
+---
+
+## Beyond M14
+
+The natural continuation: immediate ALU forms (`80`–`83`) → INC/DEC → LOOP/JCXZ →
+segment-override prefixes → PUSHF/POPF + remaining stack forms → INT/IRET and the
+interrupt vector table → devices → BIOS → boot sector. The long arc from the
+project charter stays intact:
 
 ```
 CPU → Memory → Interrupts → Devices → BIOS → Boot sector → MS-DOS 2.0 → MS-DOS 4.0
