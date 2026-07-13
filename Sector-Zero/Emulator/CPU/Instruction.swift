@@ -26,6 +26,13 @@ enum Instruction: Equatable {
     case movRMToSegment(segment: SegmentRegister, source: ModRMOperand, eaClocks: Int)
     case pushSegment(SegmentRegister)
     case popSegment(SegmentRegister)
+    case pushFlags
+    case popFlags
+    case loadStatusFlagsIntoAH
+    case storeAHIntoStatusFlags
+    case clearFlag(CPUFlag)
+    case setFlag(CPUFlag)
+    case complementCarry
     case aluRegisterToRM8(op: ALUBinaryOp, source: Register8, destination: ModRMOperand, eaClocks: Int)
     case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
     case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)

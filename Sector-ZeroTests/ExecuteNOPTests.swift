@@ -63,7 +63,7 @@ struct ExecuteNOPTests {
 
     @Test("Unknown opcode executes as no-op-and-advance")
     func unknownOpcodeIsNoOpAndAdvance() {
-        let machine = machineWithOpcodes([0xF5])
+        let machine = machineWithOpcodes([0x60])
         let before = machine.snapshot().cpu
         machine.step()
         let after = machine.snapshot()
@@ -72,7 +72,7 @@ struct ExecuteNOPTests {
         #expect(after.cycleCount == 3)
         #expect(after.cpu.ax == before.ax)
         #expect(after.cpu.flags.rawValue == before.flags.rawValue)
-        #expect(after.cpu.lastFetchedOpcode == 0xF5)
+        #expect(after.cpu.lastFetchedOpcode == 0x60)
     }
 
     @Test("Reset clears accumulated cycles")

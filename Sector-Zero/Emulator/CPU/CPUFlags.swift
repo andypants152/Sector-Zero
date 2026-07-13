@@ -50,7 +50,7 @@ struct CPUFlags: Equatable, Sendable {
     private(set) var rawValue: UInt16
 
     init(rawValue: UInt16 = Self.resetRawValue) {
-        self.rawValue = rawValue | Self.reservedMask
+        self.rawValue = Self.normalized(rawValue)
     }
 
     subscript(flag: CPUFlag) -> Bool {
@@ -62,8 +62,8 @@ struct CPUFlags: Equatable, Sendable {
                 rawValue |= flag.mask
             } else {
                 rawValue &= ~flag.mask
-                rawValue |= Self.reservedMask
             }
+            rawValue = Self.normalized(rawValue)
         }
     }
 
@@ -79,14 +79,38 @@ struct CPUFlags: Equatable, Sendable {
         String(format: "%04X", rawValue)
     }
 
+    /// The status flags exposed by LAHF in their architectural byte layout.
+    /// Bit 1 is fixed high; reserved bits 3 and 5 are fixed low.
+    var statusByte: UInt8 {
+        UInt8(truncatingIfNeeded: rawValue)
+    }
+
+    /// SAHF replaces SF/ZF/AF/PF/CF from AH and preserves every control flag
+    /// plus OF. Reserved bits are normalized rather than copied from AH.
+    mutating func applyStatusByte(_ value: UInt8) {
+        let statusMask = CPUFlag.sign.mask
+            | CPUFlag.zero.mask
+            | CPUFlag.auxiliaryCarry.mask
+            | CPUFlag.parity.mask
+            | CPUFlag.carry.mask
+        rawValue = Self.normalized((rawValue & ~statusMask) | (UInt16(value) & statusMask))
+    }
+
     /// Bits hard-wired to 1 on the 8086/8088 and impossible to clear: bit 1,
     /// plus bits 12–15. IOPL (12–13), NT (14) and MD (15) have no meaning on the
-    /// 8086 and always read back as 1. Bits 3 and 5 are hard-wired to 0 and are
-    /// never touched by any flag, so they stay clear on their own. Forcing this
-    /// mask keeps every `CPUFlags` value consistent with real 8086 silicon.
+    /// 8086 and always read back as 1. Bits 3 and 5 are hard-wired to 0.
+    /// Normalizing both policies keeps every `CPUFlags` value consistent with
+    /// real 8086 silicon, including values restored by POPF.
     private static let reservedMask: UInt16 = 0xF002
+
+    /// Reserved status-byte bits that always read as zero on the 8086.
+    private static let reservedZeroMask: UInt16 = 0x0028
 
     /// After RESET the 8086 clears every condition and control flag, leaving only
     /// the hard-wired reserved bits set — i.e. the FLAGS register reads 0xF002.
     private static let resetRawValue: UInt16 = reservedMask
+
+    private static func normalized(_ value: UInt16) -> UInt16 {
+        (value | reservedMask) & ~reservedZeroMask
+    }
 }

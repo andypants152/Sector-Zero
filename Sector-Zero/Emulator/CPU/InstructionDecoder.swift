@@ -234,6 +234,28 @@ struct InstructionDecoder {
             // CPUs repurpose 0F as the two-byte-opcode escape).
             let segment = SegmentRegister(segmentEncoding: sreg >> 3)
             return sreg & 0b01 == 0 ? .pushSegment(segment) : .popSegment(segment)
+        case 0x9C:
+            return .pushFlags
+        case 0x9D:
+            return .popFlags
+        case 0x9E:
+            return .storeAHIntoStatusFlags
+        case 0x9F:
+            return .loadStatusFlagsIntoAH
+        case 0xF5:
+            return .complementCarry
+        case 0xF8:
+            return .clearFlag(.carry)
+        case 0xF9:
+            return .setFlag(.carry)
+        case 0xFA:
+            return .clearFlag(.interruptEnable)
+        case 0xFB:
+            return .setFlag(.interruptEnable)
+        case 0xFC:
+            return .clearFlag(.direction)
+        case 0xFD:
+            return .setFlag(.direction)
         case 0x90:
             return .nop
         case 0xF4:

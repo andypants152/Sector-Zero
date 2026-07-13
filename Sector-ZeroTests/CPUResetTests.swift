@@ -76,6 +76,11 @@ struct CPUFlagsReservedBitsTests {
         #expect(CPUFlags(rawValue: 0x0000).rawValue == Self.reservedMask)
     }
 
+    @Test("Reserved-zero bits are cleared from an all-one raw value")
+    func reservedZeroBitsClearedFromOnes() {
+        #expect(CPUFlags(rawValue: 0xFFFF).rawValue == 0xFFD7)
+    }
+
     @Test("Reserved bits survive clearing a condition flag")
     func reservedBitsSurviveClear() {
         var flags = CPUFlags()

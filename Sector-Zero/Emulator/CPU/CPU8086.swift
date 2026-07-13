@@ -199,6 +199,27 @@ final class CPU8086 {
         case .popSegment(let segment):
             writeSegment(pop16(), to: segment)
             return 8
+        case .pushFlags:
+            push16(flags.rawValue)
+            return 10
+        case .popFlags:
+            flags = CPUFlags(rawValue: pop16())
+            return 8
+        case .loadStatusFlagsIntoAH:
+            registers[.ah] = flags.statusByte
+            return 4
+        case .storeAHIntoStatusFlags:
+            flags.applyStatusByte(registers[.ah])
+            return 4
+        case .clearFlag(let flag):
+            flags[flag] = false
+            return 2
+        case .setFlag(let flag):
+            flags[flag] = true
+            return 2
+        case .complementCarry:
+            flags[.carry].toggle()
+            return 2
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
             // ALU r/m8, r8 — a memory destination is read-modify-write
             // (16+EA), except CMP which only reads (9+EA).
