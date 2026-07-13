@@ -362,6 +362,8 @@ final class CPU8086 {
     private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {
         switch op {
         case .add: return ALU.add8(a, b)
+        case .adc: return ALU.addWithCarry8(a, b, carryIn: flags[.carry])
+        case .sbb: return ALU.subtractWithBorrow8(a, b, borrowIn: flags[.carry])
         case .sub, .cmp: return ALU.subtract8(a, b)
         case .and, .test: return ALU.and8(a, b)
         case .or: return ALU.or8(a, b)
@@ -372,6 +374,8 @@ final class CPU8086 {
     private func perform16(_ op: ALUBinaryOp, _ a: UInt16, _ b: UInt16) -> (UInt16, ArithmeticFlags) {
         switch op {
         case .add: return ALU.add16(a, b)
+        case .adc: return ALU.addWithCarry16(a, b, carryIn: flags[.carry])
+        case .sbb: return ALU.subtractWithBorrow16(a, b, borrowIn: flags[.carry])
         case .sub, .cmp: return ALU.subtract16(a, b)
         case .and, .test: return ALU.and16(a, b)
         case .or: return ALU.or16(a, b)

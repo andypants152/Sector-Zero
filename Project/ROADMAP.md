@@ -11,12 +11,12 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M23 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M24 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
-ADD/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator-immediate forms;
+ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation). The
-next milestone is M24 below.
+next milestone is M25 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -268,7 +268,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
 ---
 
-## Completed (M23)
+## Completed (M23–M24)
 
 ### M23 — Flag manipulation: PUSHF/POPF, LAHF/SAHF, CLC/STC/CMC, CLI/STI, CLD/STD (0x9C/0x9D, 0x9E/0x9F, 0xF5/0xF8/0xF9, 0xFA/0xFB, 0xFC/0xFD) ✅
 - **Goal:** Direct FLAGS access — prerequisite for IRET, context switching,
@@ -285,11 +285,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   LAHF/SAHF bit layout exactly, each set/clear/complement, POPF cannot clear
   reserved bits.
 
----
-
-## Next milestones (M24–M26)
-
-### M24 — ADC and SBB (0x10–0x13, 0x18–0x1B, group /2 and /3)
+### M24 — ADC and SBB (0x10–0x13, 0x18–0x1B, group /2 and /3) ✅
 - **Goal:** Carry-chained arithmetic — multi-word adds/subtracts, the last
   binary ALU ops.
 - **Build:** `ALU.addWithCarry8/16` and `subtractWithBorrow8/16` (fold the
@@ -301,6 +297,10 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   make them free (they should be — `14`/`15`, `1C`/`1D`).
 - **Tests:** 32-bit add/sub composed from two 16-bit ops (the canonical use),
   CF-in of both states per op, AF/OF edge cases, immediate-group parity.
+
+---
+
+## Next milestones (M25–M26)
 
 ### M25 — Shifts and rotates (0xD0–0xD3)
 - **Goal:** The shift/rotate group — heavily used for multiplication by

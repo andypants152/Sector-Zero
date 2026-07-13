@@ -126,11 +126,12 @@ struct TestAndAccumulatorTests {
         #expect(short.snapshot().cpu.flags[.zero])
     }
 
-    @Test("ADC/SBB accumulator forms remain unknown until M24")
-    func adcSbbStillUnknown() {
+    @Test("ADC/SBB accumulator forms decode through the shared selector")
+    func adcSbbAccumulatorDecode() {
         let decoder = InstructionDecoder()
-        for opcode: UInt8 in [0x14, 0x15, 0x1C, 0x1D] {
-            #expect(decoder.decode(opcode: opcode, registers: RegisterFile()) { 0 } == .unknown(opcode))
-        }
+        #expect(decoder.decode(opcode: 0x14, registers: RegisterFile()) { 0 } == .aluImmediateToRM8(op: .adc, destination: .register(0), immediate: 0, eaClocks: 0))
+        #expect(decoder.decode(opcode: 0x15, registers: RegisterFile()) { 0 } == .aluImmediateToRM16(op: .adc, destination: .register(0), immediate: 0, eaClocks: 0))
+        #expect(decoder.decode(opcode: 0x1C, registers: RegisterFile()) { 0 } == .aluImmediateToRM8(op: .sbb, destination: .register(0), immediate: 0, eaClocks: 0))
+        #expect(decoder.decode(opcode: 0x1D, registers: RegisterFile()) { 0 } == .aluImmediateToRM16(op: .sbb, destination: .register(0), immediate: 0, eaClocks: 0))
     }
 }

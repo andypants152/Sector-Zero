@@ -3,7 +3,7 @@ import Testing
 
 /// Milestone 15 — Immediate ALU forms (0x80, 0x81, 0x83).
 ///
-/// The ModR/M reg field selects the operation (/0 ADD, /5 SUB, /7 CMP); the
+/// The ModR/M reg field selects the operation (all eight ALU selectors); the
 /// immediate follows the ModR/M byte and any displacement. 0x80 takes imm8,
 /// 0x81 imm16 (little-endian), 0x83 a sign-extended imm8 applied to a 16-bit
 /// destination. Cycles: register 4; memory 17+EA (CMP, which only reads,
@@ -133,12 +133,12 @@ struct ImmediateALUTests {
         #expect(machine.cpu.ip == 6)
     }
 
-    @Test("Unimplemented group ops consume their bytes and no-op")
-    func unimplementedGroupOpAdvances() {
-        // 80 /4 (AND, not yet implemented) reg form with imm8: 3 bytes.
-        let machine = machineWithOpcodes([0x80, 0xE0, 0xFF, 0xF4])
+    @Test("Newly implemented carry-group ops consume their full encoding")
+    func carryGroupOpAdvances() {
+        // 80 /2 ADC AL,0xFF with carry clear, followed by HLT.
+        let machine = machineWithOpcodes([0x80, 0xD0, 0xFF, 0xF4])
         machine.run(maxSteps: 2)
-        #expect(machine.cpu.ax == 0) // untouched
-        #expect(machine.cpu.halted)  // IP landed exactly on the HLT
+        #expect(machine.cpu.registers[.al] == 0xFF)
+        #expect(machine.cpu.halted) // IP landed exactly on the HLT
     }
 }

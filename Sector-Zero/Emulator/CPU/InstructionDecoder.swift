@@ -12,7 +12,8 @@ struct InstructionDecoder {
 
     func decode(opcode: UInt8, registers: RegisterFile, nextByte: () -> UInt8) -> Instruction {
         switch opcode {
-        case 0x00...0x03, 0x08...0x0B, 0x20...0x23, 0x28...0x2B, 0x30...0x33, 0x38...0x3B:
+        case 0x00...0x03, 0x08...0x0B, 0x10...0x13, 0x18...0x1B,
+             0x20...0x23, 0x28...0x2B, 0x30...0x33, 0x38...0x3B:
             // ALU r/m ↔ reg blocks, same width/direction bit layout as MOV
             // below; bits 5–3 of the opcode name the operation.
             guard let op = ALUBinaryOp(aluSelector: opcode >> 3) else { return .unknown(opcode) }
@@ -51,12 +52,10 @@ struct InstructionDecoder {
             }
         case 0x80, 0x81, 0x83:
             // Immediate ALU group: the ModR/M reg field selects the operation
-            // (/0 ADD, /5 SUB, /7 CMP). 0x80 takes imm8, 0x81 imm16, 0x83 a
-            // sign-extended imm8 into a 16-bit destination. The immediate is
-            // consumed even for the group's unimplemented operations so IP
-            // still lands on the next instruction (no-op-and-advance).
+            // (all eight binary ALU operations). 0x80 takes imm8, 0x81 imm16,
+            // and 0x83 a sign-extended imm8 into a 16-bit destination.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
-            let op = ALUBinaryOp(aluSelector: modRM.reg) // nil for ADC (/2), SBB (/3) — M24
+            let op = ALUBinaryOp(aluSelector: modRM.reg)
             if opcode == 0x80 {
                 let immediate = nextByte()
                 guard let op else { return .unknown(opcode) }
@@ -91,8 +90,8 @@ struct InstructionDecoder {
             // Accumulator-immediate ALU shortcuts: <op> AL,imm8 / <op> AX,imm16,
             // op in bits 5–3. AL/AX (encoding 0) is the destination, so the
             // immediate-ALU execution charges the 4-clock register path. The
-            // immediate is consumed even for the unimplemented ADC/SBB so IP
-            // stays aligned (as with the 80/81/83 group).
+            // immediate is consumed before selector resolution so decoding
+            // remains aligned if the selector table ever gains a gap.
             let isWord = accumulator & 0b01 != 0
             let immediate: UInt16
             if isWord {

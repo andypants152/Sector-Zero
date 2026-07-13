@@ -17,12 +17,21 @@ struct ArithmeticFlags: Equatable, Sendable {
 /// overflow, i.e. both operands share a sign the result doesn't.
 enum ALU {
     static func add8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
-        let wide = UInt16(a) + UInt16(b)
+        addWithCarry8(a, b, carryIn: false)
+    }
+
+    static func addWithCarry8(
+        _ a: UInt8,
+        _ b: UInt8,
+        carryIn: Bool
+    ) -> (result: UInt8, flags: ArithmeticFlags) {
+        let carry = carryIn ? UInt16(1) : 0
+        let wide = UInt16(a) + UInt16(b) + carry
         let result = UInt8(truncatingIfNeeded: wide)
         let flags = ArithmeticFlags(
             carry: wide > 0xFF,
             parity: hasEvenParity(result),
-            auxiliaryCarry: (a & 0xF) + (b & 0xF) > 0xF,
+            auxiliaryCarry: UInt16(a & 0xF) + UInt16(b & 0xF) + carry > 0xF,
             zero: result == 0,
             sign: result & 0x80 != 0,
             overflow: (a ^ result) & (b ^ result) & 0x80 != 0
@@ -31,12 +40,21 @@ enum ALU {
     }
 
     static func add16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
-        let wide = UInt32(a) + UInt32(b)
+        addWithCarry16(a, b, carryIn: false)
+    }
+
+    static func addWithCarry16(
+        _ a: UInt16,
+        _ b: UInt16,
+        carryIn: Bool
+    ) -> (result: UInt16, flags: ArithmeticFlags) {
+        let carry = carryIn ? UInt32(1) : 0
+        let wide = UInt32(a) + UInt32(b) + carry
         let result = UInt16(truncatingIfNeeded: wide)
         let flags = ArithmeticFlags(
             carry: wide > 0xFFFF,
             parity: hasEvenParity(UInt8(truncatingIfNeeded: result)),
-            auxiliaryCarry: (a & 0xF) + (b & 0xF) > 0xF,
+            auxiliaryCarry: UInt32(a & 0xF) + UInt32(b & 0xF) + carry > 0xF,
             zero: result == 0,
             sign: result & 0x8000 != 0,
             overflow: (a ^ result) & (b ^ result) & 0x8000 != 0
@@ -48,11 +66,21 @@ enum ALU {
     /// overflow (operands of differing sign where the result's sign flipped
     /// away from the minuend's).
     static func subtract8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
-        let result = a &- b
+        subtractWithBorrow8(a, b, borrowIn: false)
+    }
+
+    static func subtractWithBorrow8(
+        _ a: UInt8,
+        _ b: UInt8,
+        borrowIn: Bool
+    ) -> (result: UInt8, flags: ArithmeticFlags) {
+        let borrow = borrowIn ? UInt16(1) : 0
+        let subtrahend = UInt16(b) + borrow
+        let result = UInt8(truncatingIfNeeded: UInt16(a) &- subtrahend)
         let flags = ArithmeticFlags(
-            carry: a < b,
+            carry: UInt16(a) < subtrahend,
             parity: hasEvenParity(result),
-            auxiliaryCarry: (a & 0xF) < (b & 0xF),
+            auxiliaryCarry: UInt16(a & 0xF) < UInt16(b & 0xF) + borrow,
             zero: result == 0,
             sign: result & 0x80 != 0,
             overflow: (a ^ b) & (a ^ result) & 0x80 != 0
@@ -61,11 +89,21 @@ enum ALU {
     }
 
     static func subtract16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
-        let result = a &- b
+        subtractWithBorrow16(a, b, borrowIn: false)
+    }
+
+    static func subtractWithBorrow16(
+        _ a: UInt16,
+        _ b: UInt16,
+        borrowIn: Bool
+    ) -> (result: UInt16, flags: ArithmeticFlags) {
+        let borrow = borrowIn ? UInt32(1) : 0
+        let subtrahend = UInt32(b) + borrow
+        let result = UInt16(truncatingIfNeeded: UInt32(a) &- subtrahend)
         let flags = ArithmeticFlags(
-            carry: a < b,
+            carry: UInt32(a) < subtrahend,
             parity: hasEvenParity(UInt8(truncatingIfNeeded: result)),
-            auxiliaryCarry: (a & 0xF) < (b & 0xF),
+            auxiliaryCarry: UInt32(a & 0xF) < UInt32(b & 0xF) + borrow,
             zero: result == 0,
             sign: result & 0x8000 != 0,
             overflow: (a ^ b) & (a ^ result) & 0x8000 != 0
