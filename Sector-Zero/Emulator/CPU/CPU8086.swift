@@ -217,6 +217,20 @@ final class CPU8086 {
         case .jumpShort(let displacement):
             ip = ip &+ UInt16(bitPattern: Int16(displacement))
             return 15
+        case .loop(let condition, let displacement):
+            // CX decrements unconditionally and without touching flags; the
+            // branch tests the *new* CX (so entering with CX=0 wraps to
+            // 0xFFFF and loops 65536 times, like real silicon).
+            registers[.cx] = registers[.cx] &- 1
+            guard registers[.cx] != 0, condition.isSatisfied(by: flags) else {
+                return condition.notTakenClocks
+            }
+            ip = ip &+ UInt16(bitPattern: Int16(displacement))
+            return condition.takenClocks
+        case .jumpIfCXZero(let displacement):
+            guard registers[.cx] == 0 else { return 6 }
+            ip = ip &+ UInt16(bitPattern: Int16(displacement))
+            return 18
         case .unknown:
             return 3
         }

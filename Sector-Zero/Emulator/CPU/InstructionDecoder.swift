@@ -97,6 +97,16 @@ struct InstructionDecoder {
                 condition: JumpCondition(encoding: opcode & 0xF),
                 displacement: Int8(bitPattern: nextByte())
             )
+        case 0xE0...0xE2:
+            // LOOPNE / LOOPE / LOOP, all with a signed disp8.
+            let condition: LoopCondition = switch opcode {
+            case 0xE0: .whileNotZero
+            case 0xE1: .whileZero
+            default:   .unconditional
+            }
+            return .loop(condition: condition, displacement: Int8(bitPattern: nextByte()))
+        case 0xE3:
+            return .jumpIfCXZero(displacement: Int8(bitPattern: nextByte()))
         case 0xC3:
             return .returnNear
         case 0xE8:

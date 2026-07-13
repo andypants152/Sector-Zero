@@ -11,9 +11,10 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M16 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M17 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; conditional
-jumps; PUSH/POP; CALL/RET near; INC/DEC). The next milestone is M17 below.
+jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ). The next milestone is
+M18 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -176,20 +177,21 @@ composes on top of it). 3 clocks. `FE`/`FF` r/m forms deferred.
 
 ---
 
-## Next ten milestones (M17–M26)
+## Completed (continued)
 
-### M17 — LOOP family + JCXZ (0xE0–0xE3)
-- **Goal:** Hardware loop instructions — completes the countdown-loop idiom
-  with the real 8086 primitives.
-- **Build:** `E2` LOOP: CX -= 1 (no flags), branch on CX ≠ 0. `E1` LOOPE/Z
-  and `E0` LOOPNE/NZ additionally require ZF set/clear. `E3` JCXZ branches
-  when CX == 0 without touching it. All take a signed disp8 relative to the
-  next instruction. Cycles (taken/not): LOOP 17/5, LOOPE 18/6, LOOPNE 19/5,
-  JCXZ 18/6 — verify.
-- **Don't:** Near/far 16-bit JMPs (`E9`/`EA`); string-op REP prefixes.
-- **Tests:** LOOP countdown leaves CX 0 and flags untouched, each variant's
-  ZF gate, JCXZ taken/not-taken, cycle splits, CX=0 entry wraps to 65536
-  iterations (pin the wrap semantics with a cheap equivalent).
+### M17 — LOOP family + JCXZ (0xE0–0xE3) ✅
+`LoopCondition` carries the ZF gate (E0 LOOPNE, E1 LOOPE, E2 unconditional)
+and each variant's taken/not-taken clocks (19/5, 18/6, 17/5). CX decrements
+unconditionally, without flags, and the branch tests the *new* CX — so CX=0
+entry wraps to 0xFFFF and loops 65536 times (pinned by a single-step wrap
+test). `E3` JCXZ (18/6) branches on CX == 0 without modifying it. Tested:
+countdown loops, flag transparency, both ZF gates each way, cycle splits,
+JCXZ taken/not-taken. Test-writing note: accumulator-immediate CMP (`3C`)
+doesn't exist until M20 — use `80 /7` in fixtures.
+
+---
+
+## Next milestones (M18–M26)
 
 ### M18 — JMP near and far (0xE9, 0xEA)
 - **Goal:** Unconditional 16-bit jumps, including the first cross-segment

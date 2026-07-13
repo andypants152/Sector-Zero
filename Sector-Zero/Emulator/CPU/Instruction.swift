@@ -29,6 +29,8 @@ enum Instruction: Equatable {
     case returnNear
     case jumpConditional(condition: JumpCondition, displacement: Int8)
     case jumpShort(displacement: Int8)
+    case loop(condition: LoopCondition, displacement: Int8)
+    case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)
 }
 
@@ -56,6 +58,38 @@ struct JumpCondition: Equatable, Sendable {
         default: base = flags[.zero] || (flags[.sign] != flags[.overflow])
         }
         return encoding & 1 == 0 ? base : !base
+    }
+}
+
+/// The LOOP family's gate beyond CX ≠ 0: LOOPE (E1) also requires ZF set,
+/// LOOPNE (E0) ZF clear. Taken/not-taken clock costs differ per variant.
+enum LoopCondition: Equatable, Sendable {
+    case unconditional
+    case whileZero
+    case whileNotZero
+
+    func isSatisfied(by flags: CPUFlags) -> Bool {
+        switch self {
+        case .unconditional: true
+        case .whileZero: flags[.zero]
+        case .whileNotZero: !flags[.zero]
+        }
+    }
+
+    var takenClocks: Int {
+        switch self {
+        case .unconditional: 17
+        case .whileZero: 18
+        case .whileNotZero: 19
+        }
+    }
+
+    var notTakenClocks: Int {
+        switch self {
+        case .unconditional: 5
+        case .whileZero: 6
+        case .whileNotZero: 5
+        }
     }
 }
 
