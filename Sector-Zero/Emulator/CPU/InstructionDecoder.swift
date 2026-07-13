@@ -241,6 +241,27 @@ struct InstructionDecoder {
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
             guard modRM.reg == 0 else { return .unknown(opcode) }
             return .popRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
+        case 0x8D:
+            // LEA consumes only the addressing arithmetic. Register ModR/M
+            // forms are invalid because there is no effective address.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            guard let offset = modRM.operand.effectiveOffset else { return .unknown(opcode) }
+            return .loadEffectiveAddress(
+                destination: Register16(rawValue: modRM.reg)!,
+                offset: offset,
+                eaClocks: modRM.eaClocks
+            )
+        case 0xC4, 0xC5:
+            // LES/LDS load an offset into the selected GP register and the
+            // following word into ES/DS. Their source must be memory.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            guard case .memory = modRM.operand else { return .unknown(opcode) }
+            return .loadFarPointer(
+                destination: Register16(rawValue: modRM.reg)!,
+                segment: opcode == 0xC4 ? .es : .ds,
+                source: modRM.operand,
+                eaClocks: modRM.eaClocks
+            )
         case 0xFE:
             // Byte INC/DEC group: /0 INC, /1 DEC.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)

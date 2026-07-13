@@ -11,14 +11,14 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M29 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M30 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
-indirect near CALL/JMP; far CALL/JMP and immediate/far RET). The next milestone
-is M30 below.
+indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES). The
+next milestone is M31 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -381,7 +381,7 @@ matrix introduced in M39 is the CPU-completion gate.
   cleanup, offset/segment reads across a 16-bit offset wrap, segment override on
   pointer reads, invalid register forms, and flags unchanged.
 
-### M30 — Address and far-pointer loads: LEA/LDS/LES (0x8D, 0xC4–0xC5)
+### M30 — Address and far-pointer loads: LEA/LDS/LES (0x8D, 0xC4–0xC5) ✅
 - **Goal:** Support compiler-generated address calculation and far data
   pointers.
 - **Build:** LEA writes the decoded effective offset without reading memory;

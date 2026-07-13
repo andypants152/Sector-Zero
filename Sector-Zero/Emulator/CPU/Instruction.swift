@@ -24,6 +24,8 @@ enum Instruction: Equatable {
     case exchangeAXWithRegister(Register16)
     case movSegmentToRM(destination: ModRMOperand, segment: SegmentRegister, eaClocks: Int)
     case movRMToSegment(segment: SegmentRegister, source: ModRMOperand, eaClocks: Int)
+    case loadEffectiveAddress(destination: Register16, offset: UInt16, eaClocks: Int)
+    case loadFarPointer(destination: Register16, segment: SegmentRegister, source: ModRMOperand, eaClocks: Int)
     case pushSegment(SegmentRegister)
     case popSegment(SegmentRegister)
     case pushFlags

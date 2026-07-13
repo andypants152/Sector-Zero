@@ -200,6 +200,19 @@ final class CPU8086 {
             // MOV sreg, r/m16 — register 2 clocks, memory 8+EA. No flags.
             writeSegment(readOperand16(source), to: segment)
             return isRegister(source) ? 2 : 8 + eaClocks
+        case .loadEffectiveAddress(let destination, let offset, let eaClocks):
+            // The decoder has already performed the address arithmetic. LEA
+            // neither resolves a segment nor accesses the bus.
+            registers[destination] = offset
+            return 2 + eaClocks
+        case .loadFarPointer(let destination, let segment, let source, let eaClocks):
+            // Read the complete pointer before either architectural destination
+            // changes (especially important when LDS also supplies the source
+            // segment or its address used the destination register).
+            let pointer = readFarPointer(from: source)
+            registers[destination] = pointer.offset
+            writeSegment(pointer.segment, to: segment)
+            return 16 + eaClocks
         case .pushSegment(let segment):
             push16(segmentValue(segment))
             return 10

@@ -43,6 +43,14 @@ enum ModRMOperand: Equatable, Sendable {
     /// whether it names a `Register8` or `Register16` (both share raw values).
     case register(UInt8)
     case memory(EffectiveAddress)
+
+    /// The arithmetic offset produced by the addressing mode, independent of
+    /// its default segment. LEA consumes this without resolving a segment or
+    /// issuing a memory access.
+    var effectiveOffset: UInt16? {
+        guard case .memory(let address) = self else { return nil }
+        return address.offset
+    }
 }
 
 /// A fully decoded ModR/M byte.
