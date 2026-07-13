@@ -161,6 +161,16 @@ final class CPU8086 {
             }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(source) ? 3 : 9 + eaClocks
+        case .pushRegister16(let register):
+            // The register is read *after* SP moves, so PUSH SP stores the
+            // decremented value — the documented 8086 quirk (80286+ store the
+            // old value).
+            registers[.sp] = registers[.sp] &- 2
+            writeMemoryWord(registers[register], at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
+            return 11
+        case .popRegister16(let register):
+            registers[register] = pop16()
+            return 8
         case .jumpConditional(let condition, let displacement):
             // IP already points past the displacement byte; a taken branch
             // adds the sign-extended offset with 16-bit wrap.
@@ -184,6 +194,20 @@ final class CPU8086 {
         case .ss: ss = value
         case .ds: ds = value
         }
+    }
+
+    /// The stack lives at SS:SP and grows downward: push is
+    /// decrement-then-write, pop is read-then-increment, both wrapping at
+    /// 16 bits within the stack segment.
+    private func push16(_ value: UInt16) {
+        registers[.sp] = registers[.sp] &- 2
+        writeMemoryWord(value, at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
+    }
+
+    private func pop16() -> UInt16 {
+        let value = readMemoryWord(at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
+        registers[.sp] = registers[.sp] &+ 2
+        return value
     }
 
     private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {

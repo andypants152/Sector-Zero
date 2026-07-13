@@ -54,6 +54,10 @@ struct InstructionDecoder {
                     eaClocks: modRM.eaClocks
                 )
             }
+        case 0x50...0x57:
+            return .pushRegister16(Register16(rawValue: opcode & 0b111)!)
+        case 0x58...0x5F:
+            return .popRegister16(Register16(rawValue: opcode & 0b111)!)
         case 0x70...0x7F:
             // Jcc short: signed disp8 relative to the next instruction.
             return .jumpConditional(

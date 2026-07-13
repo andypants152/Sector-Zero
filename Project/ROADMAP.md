@@ -14,8 +14,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
-(ALU flag engine + ADD), M11 (SUB/CMP), and M12 (conditional jumps) are complete
-and tested. The next milestones are M13–M14 below.
+(ALU flag engine + ADD), M11 (SUB/CMP), M12 (conditional jumps), and M13
+(PUSH/POP) are complete and tested. The next milestone is M14 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -166,20 +166,13 @@ Displacement is a signed disp8 applied after IP has passed the operand, with
 predicate table, taken/not-taken cycle splits, a CMP/SUB+JNZ countdown loop,
 forward skips, and backward-wrap. Near/far 16-bit JMPs and LOOP/JCXZ deferred.
 
-### M13 — Stack: PUSH/POP reg (0x50–0x5F)
-- **Goal:** The stack discipline (SS:SP, decrement-before-write) that CALL/RET
-  and interrupts will build on.
-- **Build:** CPU stack helpers `push16`/`pop16`: PUSH decrements SP by 2 then
-  writes the word at SS:SP; POP reads then increments. Decode/execute
-  `50`–`57` (PUSH reg16) and `58`–`5F` (POP reg16) — the low three bits are the
-  register encoding, as with MOV-immediate. Cycles: PUSH **11**, POP **8** —
-  verify. Note the 8086 `PUSH SP` quirk (pushes the *already-decremented* SP);
-  match it and pin it with a test.
-- **Don't:** PUSH/POP of segment registers or r/m forms; PUSHF/POPF; any
-  stack-overflow detection.
-- **Tests:** PUSH writes at SS:SP−2 with SP updated (seed SS non-zero);
-  POP round-trips; LIFO order over several registers; SP wraparound at 0;
-  the PUSH SP quirk; flags untouched.
+### M13 — Stack: PUSH/POP reg (0x50–0x5F) ✅
+`push16`/`pop16` stack helpers (SS:SP, decrement-then-write / read-then-
+increment, 16-bit wrap) plus PUSH reg16 (11 clocks) and POP reg16 (8 clocks).
+The 8086 `PUSH SP` quirk is matched — the register is read *after* SP moves,
+storing the decremented value — and pinned by a test that initially caught the
+286-style behavior. LIFO order, SS-vs-DS separation, SP wrap at 0, and
+flag preservation are all covered. PUSHF/POPF, sreg and r/m forms deferred.
 
 ### M14 — CALL/RET near (0xE8, 0xC3)
 - **Goal:** Subroutines — enough machinery to run real structured programs
