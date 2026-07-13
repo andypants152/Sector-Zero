@@ -83,6 +83,10 @@ struct InstructionDecoder {
             }
             guard let op else { return .unknown(opcode) }
             return .aluImmediateToRM16(op: op, destination: modRM.operand, immediate: immediate, eaClocks: modRM.eaClocks)
+        case 0x40...0x47:
+            return .incRegister16(Register16(rawValue: opcode & 0b111)!)
+        case 0x48...0x4F:
+            return .decRegister16(Register16(rawValue: opcode & 0b111)!)
         case 0x50...0x57:
             return .pushRegister16(Register16(rawValue: opcode & 0b111)!)
         case 0x58...0x5F:

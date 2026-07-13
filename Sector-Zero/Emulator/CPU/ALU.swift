@@ -82,6 +82,12 @@ extension CPUFlags {
     /// Applies an ALU result's flags, leaving control flags (TF/IF/DF) alone.
     mutating func applyArithmetic(_ flags: ArithmeticFlags) {
         self[.carry] = flags.carry
+        applyArithmeticPreservingCarry(flags)
+    }
+
+    /// Applies an ALU result's flags except CF — INC/DEC semantics on the
+    /// 8086, which update OF/SF/ZF/AF/PF but never touch the carry.
+    mutating func applyArithmeticPreservingCarry(_ flags: ArithmeticFlags) {
         self[.parity] = flags.parity
         self[.auxiliaryCarry] = flags.auxiliaryCarry
         self[.zero] = flags.zero

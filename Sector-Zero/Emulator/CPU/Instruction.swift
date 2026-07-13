@@ -21,6 +21,8 @@ enum Instruction: Equatable {
     case aluRMToRegister16(op: ALUBinaryOp, destination: Register16, source: ModRMOperand, eaClocks: Int)
     case aluImmediateToRM8(op: ALUBinaryOp, destination: ModRMOperand, immediate: UInt8, eaClocks: Int)
     case aluImmediateToRM16(op: ALUBinaryOp, destination: ModRMOperand, immediate: UInt16, eaClocks: Int)
+    case incRegister16(Register16)
+    case decRegister16(Register16)
     case pushRegister16(Register16)
     case popRegister16(Register16)
     case callNearRelative(displacement: Int16)

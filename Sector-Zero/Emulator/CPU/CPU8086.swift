@@ -177,6 +177,18 @@ final class CPU8086 {
             }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(destination) ? 4 : (op.writesResult ? 17 : 10) + eaClocks
+        case .incRegister16(let register):
+            // INC/DEC update OF/SF/ZF/AF/PF like ADD/SUB by 1 but leave CF
+            // untouched — the documented 8086 quirk.
+            let (result, arithmeticFlags) = ALU.add16(registers[register], 1)
+            registers[register] = result
+            flags.applyArithmeticPreservingCarry(arithmeticFlags)
+            return 3
+        case .decRegister16(let register):
+            let (result, arithmeticFlags) = ALU.subtract16(registers[register], 1)
+            registers[register] = result
+            flags.applyArithmeticPreservingCarry(arithmeticFlags)
+            return 3
         case .pushRegister16(let register):
             // The register is read *after* SP moves, so PUSH SP stores the
             // decremented value — the documented 8086 quirk (80286+ store the

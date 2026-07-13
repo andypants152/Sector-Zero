@@ -15,8 +15,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
 (ALU flag engine + ADD), M11 (SUB/CMP), M12 (conditional jumps), M13
-(PUSH/POP), M14 (CALL/RET near), and M15 (immediate ALU forms) are complete
-and tested. The next milestone is M16 below.
+(PUSH/POP), M14 (CALL/RET near), M15 (immediate ALU forms), and M16
+(INC/DEC reg16) are complete and tested. The next milestone is M17 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -195,17 +195,27 @@ register forms, and full IP advance. `82` (undocumented alias) left unknown.
 Lesson pinned: decoder tests must feed streams as long as the longest
 decode (a 2-byte stream trapped once `81` pulled 5 bytes).
 
-### M16 — INC/DEC reg16 (0x40–0x4F)
-- **Goal:** The one-byte increment/decrement block — pervasive in real code
-  and the natural companion to LOOP later.
-- **Build:** `40`–`47` INC reg16, `48`–`4F` DEC reg16 (low three bits index
-  the register). Flags: OF/SF/ZF/AF/PF update, **CF is untouched** — the
-  8086's deliberate INC/DEC quirk; route through the ALU with a
-  carry-preserving apply. Cycles: 3 (verify).
-- **Don't:** `FE`/`FF` r/m forms; INC/DEC of byte registers (those only
-  exist via `FE`).
-- **Tests:** all 16 encodings, wrap 0xFFFF→0 (ZF set, CF *unchanged*),
-  0x7FFF→0x8000 overflow, CF preservation both set and clear.
+### M16 — INC/DEC reg16 (0x40–0x4F) ✅
+`40`–`47` INC, `48`–`4F` DEC; the low three bits index the register.
+Executed as ALU add/subtract of 1 through a new
+`CPUFlags.applyArithmeticPreservingCarry` (OF/SF/ZF/AF/PF update, CF
+untouched — the 8086 quirk; `applyArithmetic` now composes on top of it).
+3 clocks. Tested: all 16 encodings, 0xFFFF→0 and 0→0xFFFF wraps with CF
+unchanged (both CF states), 0x7FFF→0x8000 / 0x8000→0x7FFF signed overflow,
+AF, and a DEC+JNZ countdown loop. `FE`/`FF` r/m forms deferred.
+
+### M17 — LOOP family + JCXZ (0xE0–0xE3)
+- **Goal:** Hardware loop instructions — completes the countdown-loop idiom
+  with the real 8086 primitives.
+- **Build:** `E2` LOOP: CX -= 1 (no flags), branch on CX ≠ 0. `E1` LOOPE/Z
+  and `E0` LOOPNE/NZ additionally require ZF set/clear. `E3` JCXZ branches
+  when CX == 0 without touching it. All take a signed disp8 relative to the
+  next instruction. Cycles (taken/not): LOOP 17/5, LOOPE 18/6, LOOPNE 19/5,
+  JCXZ 18/6 — verify.
+- **Don't:** Near/far 16-bit JMPs (`E9`/`EA`); string-op REP prefixes.
+- **Tests:** LOOP countdown leaves CX 0 and flags untouched, each variant's
+  ZF gate, JCXZ taken/not-taken, cycle splits, CX=0 entry runs 65536 times
+  (or pin the wrap semantics with a cheaper equivalent).
 
 ---
 
