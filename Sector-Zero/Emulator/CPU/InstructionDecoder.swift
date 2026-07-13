@@ -224,10 +224,14 @@ struct InstructionDecoder {
             )
         case 0xA4, 0xA5:
             return .moveString(isWord: opcode & 1 != 0)
+        case 0xA6, 0xA7:
+            return .compareString(isWord: opcode & 1 != 0)
         case 0xAA, 0xAB:
             return .storeString(isWord: opcode & 1 != 0)
         case 0xAC, 0xAD:
             return .loadString(isWord: opcode & 1 != 0)
+        case 0xAE, 0xAF:
+            return .scanString(isWord: opcode & 1 != 0)
         case 0xC6, 0xC7:
             // MOV r/m, imm — only the ModR/M reg field /0 is defined. Bytes are
             // consumed before that check so IP stays aligned for other reg values.

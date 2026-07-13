@@ -211,6 +211,44 @@ final class CPU8086 {
             }
             adjustStringIndex(.di, isWord: isWord)
             return 11
+        case .compareString(let isWord):
+            // CMPS subtracts the fixed ES:DI destination from the
+            // overrideable DS:SI source, updates flags, and writes neither.
+            let source = resolved(EffectiveAddress(offset: registers[.si], defaultSegment: .ds))
+            let destination = EffectiveAddress(offset: registers[.di], defaultSegment: .es)
+            if isWord {
+                let outcome = ALU.subtract16(
+                    readMemoryWord(at: source),
+                    readMemoryWord(at: destination)
+                )
+                flags.applyArithmetic(outcome.flags)
+            } else {
+                let outcome = ALU.subtract8(
+                    bus.readByte(at: physicalAddress(of: source)),
+                    bus.readByte(at: physicalAddress(of: destination))
+                )
+                flags.applyArithmetic(outcome.flags)
+            }
+            adjustStringIndex(.si, isWord: isWord)
+            adjustStringIndex(.di, isWord: isWord)
+            return 22
+        case .scanString(let isWord):
+            // SCAS subtracts the fixed ES:DI element from AL/AX. Segment
+            // overrides never redirect the implicit destination.
+            let destination = EffectiveAddress(offset: registers[.di], defaultSegment: .es)
+            if isWord {
+                flags.applyArithmetic(ALU.subtract16(
+                    registers[.ax],
+                    readMemoryWord(at: destination)
+                ).flags)
+            } else {
+                flags.applyArithmetic(ALU.subtract8(
+                    registers[.al],
+                    bus.readByte(at: physicalAddress(of: destination))
+                ).flags)
+            }
+            adjustStringIndex(.di, isWord: isWord)
+            return 15
         case .exchangeRM8(let register, let rm, let eaClocks):
             // XCHG swaps the two operands; no flags. reg↔reg 4, mem 17+EA.
             let temp = registers[register]

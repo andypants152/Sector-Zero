@@ -22,6 +22,8 @@ enum Instruction: Equatable {
     case moveString(isWord: Bool)
     case loadString(isWord: Bool)
     case storeString(isWord: Bool)
+    case compareString(isWord: Bool)
+    case scanString(isWord: Bool)
     case exchangeRM8(register: Register8, rm: ModRMOperand, eaClocks: Int)
     case exchangeRM16(register: Register16, rm: ModRMOperand, eaClocks: Int)
     case exchangeAXWithRegister(Register16)

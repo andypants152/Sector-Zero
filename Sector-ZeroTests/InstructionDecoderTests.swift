@@ -30,7 +30,7 @@ struct InstructionDecoderTests {
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x60), 0x61, 0x27, 0x62, 0x64, 0xAF, 0xC0, 0xF3,
+        UInt8(0x60), 0x61, 0x27, 0x62, 0x64, 0xC0, 0xF3,
     ])
     func decodesUnknown(opcode: UInt8) {
         #expect(decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader()) == .unknown(opcode))

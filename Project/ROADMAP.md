@@ -11,14 +11,14 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M31 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M32 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
-MOVS/LODS/STOS). The next milestone is M32 below.
+MOVS/LODS/STOS; CMPS/SCAS). The next milestone is M33 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -403,7 +403,7 @@ matrix introduced in M39 is the CPU-completion gate.
   destination fixed to ES, little-endian word transfer, flags unchanged, and
   documented single-iteration clocks.
 
-### M32 — String comparison: CMPS/SCAS (0xA6–0xA7, 0xAE–0xAF)
+### M32 — String comparison: CMPS/SCAS (0xA6–0xA7, 0xAE–0xAF) ✅
 - **Goal:** Complete the one-iteration string instruction family.
 - **Build:** CMPS computes source minus destination and advances SI+DI; SCAS
   computes AL/AX minus ES:DI and advances DI. Reuse SUB flag generation.
