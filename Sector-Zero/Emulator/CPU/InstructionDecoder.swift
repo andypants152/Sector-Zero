@@ -231,6 +231,29 @@ struct InstructionDecoder {
             return opcode & 0b01 == 0
                 ? .shiftRotate8(operation: operation, destination: modRM.operand, count: count, eaClocks: modRM.eaClocks)
                 : .shiftRotate16(operation: operation, destination: modRM.operand, count: count, eaClocks: modRM.eaClocks)
+        case 0xF6, 0xF7:
+            // Unary group. /0 TEST is the only selector with an immediate;
+            // /1 is undefined and therefore consumes only ModR/M/displacement.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            let isWord = opcode & 1 != 0
+            if modRM.reg == 0 {
+                if isWord {
+                    let low = nextByte()
+                    let high = nextByte()
+                    return .testImmediateRM16(
+                        destination: modRM.operand,
+                        immediate: UInt16(high) << 8 | UInt16(low),
+                        eaClocks: modRM.eaClocks
+                    )
+                }
+                return .testImmediateRM8(destination: modRM.operand, immediate: nextByte(), eaClocks: modRM.eaClocks)
+            }
+            guard let operation = UnaryOperation(rawValue: modRM.reg) else {
+                return .unknown(opcode)
+            }
+            return isWord
+                ? .unary16(operation: operation, operand: modRM.operand, eaClocks: modRM.eaClocks)
+                : .unary8(operation: operation, operand: modRM.operand, eaClocks: modRM.eaClocks)
         case 0x8C:
             // MOV r/m16, sreg — the ModR/M reg field selects the segment.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)

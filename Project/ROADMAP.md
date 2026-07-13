@@ -11,12 +11,13 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M25 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M26 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
-shifts and rotates). The next milestone is M26 below.
+shifts/rotates; unary arithmetic incl. multiply/divide). The next milestone is
+M27 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -34,10 +35,10 @@ republishes the snapshot. Keep the emulator core free of any UI/observation conc
 **Current CPU surface (`CPU8086`):** registers live in a `RegisterFile` value type
 (word or byte-half access; `private(set)` computed views AX/BX/CX/DX, SI/DI, SP/BP),
 plus CS/DS/ES/SS, IP, `flags: CPUFlags` (reset `0xF002`), `halted`,
-`lastFetchedOpcode: UInt8?`. Key methods:
+`fault: CPUFault?`, `lastFetchedOpcode: UInt8?`. Key methods:
 
 - `reset()` — documented 8086 reset state (CS:IP = FFFF:0000 → physical FFFF0h;
-  DS/ES/SS/IP cleared; FLAGS = `0xF002`; GP registers zeroed; halt cleared).
+  DS/ES/SS/IP cleared; FLAGS = `0xF002`; GP registers zeroed; halt/fault cleared).
 - `fetch() -> UInt8` — reads at CS:IP through the `Bus`, records
   `lastFetchedOpcode`, advances IP with 16-bit wrap.
 - `execute(_ instruction:) -> Int` — mutates state, returns the clock cost.
@@ -58,6 +59,9 @@ closure); arithmetic is pure (`ALU` returning `(result, ArithmeticFlags)`).
   decoded ModR/M group still consume their full instruction so IP stays aligned.
 - **Flags:** `applyArithmetic` (all six) vs. `applyArithmeticPreservingCarry`
   (INC/DEC). Control flags TF/IF/DF are never touched by arithmetic.
+- **Divide errors:** M26 records `CPUFault.divideError` and halts without
+  partially writing quotient/remainder. M35 will replace this sentinel with
+  authentic interrupt-vector-0 delivery.
 - **Cycle counts** come from the documented 8086 timing table (EA clocks carried
   on `ModRM`) — verify against a table, never guess.
 
@@ -268,7 +272,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
 ---
 
-## Completed (M23–M25)
+## Completed (M23–M26)
 
 ### M23 — Flag manipulation: PUSHF/POPF, LAHF/SAHF, CLC/STC/CMC, CLI/STI, CLD/STD (0x9C/0x9D, 0x9E/0x9F, 0xF5/0xF8/0xF9, 0xFA/0xFB, 0xFC/0xFD) ✅
 - **Goal:** Direct FLAGS access — prerequisite for IRET, context switching,
@@ -314,11 +318,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   9/17-bit behavior, memory read-modify-write. Undefined AF and multibit OF
   are preserved deterministically.
 
----
-
-## Next milestone (M26)
-
-### M26 — Group F6/F7: NOT, NEG, TEST imm, MUL/IMUL/DIV/IDIV
+### M26 — Group F6/F7: NOT, NEG, TEST imm, MUL/IMUL/DIV/IDIV ✅
 - **Goal:** The unary group — completes the 8086 arithmetic set.
 - **Build:** ModR/M reg selects: /0 TEST r/m,imm (reuses M20 flag path),
   /2 NOT (no flags), /3 NEG (SUB from zero; CF set unless operand was 0),
@@ -326,9 +326,10 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   nonzero), /5 IMUL (signed), /6 DIV, /7 IDIV (quotient/remainder into
   AL/AH or AX/DX). Divide-by-zero and quotient overflow should raise the
   not-yet-implemented INT 0 path — until interrupts exist, halt with a
-  documented sentinel and a TODO.
+  documented `CPUFault.divideError` sentinel and a TODO. The original 8086
+  also faults when IDIV would produce the most-negative byte/word quotient.
 - **Don't:** Exact multi-cycle timing fidelity (MUL/DIV timings vary by
-  operand; use the documented ranges' documented typical values and note it).
+  operand; use the rounded midpoint of each documented range and note it).
 - **Tests:** NOT/NEG including NEG 0 and NEG 0x80/0x8000 (OF set, value
   unchanged), MUL/IMUL sign and high-half flag behavior, DIV/IDIV
   quotient/remainder signs, divide-by-zero sentinel, TEST imm parity with

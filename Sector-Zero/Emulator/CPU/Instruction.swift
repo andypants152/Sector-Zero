@@ -35,6 +35,10 @@ enum Instruction: Equatable {
     case complementCarry
     case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
+    case testImmediateRM8(destination: ModRMOperand, immediate: UInt8, eaClocks: Int)
+    case testImmediateRM16(destination: ModRMOperand, immediate: UInt16, eaClocks: Int)
+    case unary8(operation: UnaryOperation, operand: ModRMOperand, eaClocks: Int)
+    case unary16(operation: UnaryOperation, operand: ModRMOperand, eaClocks: Int)
     case aluRegisterToRM8(op: ALUBinaryOp, source: Register8, destination: ModRMOperand, eaClocks: Int)
     case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
     case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)
@@ -54,6 +58,18 @@ enum Instruction: Equatable {
     case loop(condition: LoopCondition, displacement: Int8)
     case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)
+}
+
+/// The defined non-immediate selectors in the 8086 F6/F7 unary group. TEST
+/// (/0) has a separate instruction shape because it also consumes an immediate;
+/// /1 is intentionally absent because Intel leaves it undefined.
+enum UnaryOperation: UInt8, Equatable, Sendable {
+    case not = 2
+    case negate = 3
+    case multiplyUnsigned = 4
+    case multiplySigned = 5
+    case divideUnsigned = 6
+    case divideSigned = 7
 }
 
 /// The seven defined selectors in the 8086 D0–D3 shift/rotate group. Selector

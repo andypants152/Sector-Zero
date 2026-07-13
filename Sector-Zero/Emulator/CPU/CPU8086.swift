@@ -27,9 +27,15 @@ final class CPU8086 {
     /// fetched since reset. Exposed for inspection; not yet decoded or executed.
     private(set) var lastFetchedOpcode: UInt8?
 
-    /// True after executing HLT. A halted CPU performs no fetches; only reset
-    /// exits the state until interrupt-driven wake-from-halt exists.
+    /// True after executing HLT or raising a temporary pre-interrupt fault.
+    /// A halted CPU performs no fetches; only reset exits the state until
+    /// interrupt delivery and wake-from-halt exist.
     private(set) var halted = false
+
+    /// A temporary, observable sentinel for CPU-generated faults that cannot
+    /// yet enter an interrupt handler. M35 will replace divide-error halting
+    /// with interrupt-vector-0 delivery.
+    private(set) var fault: CPUFault?
 
     /// A pending segment-override prefix that redirects the next instruction's
     /// data-operand segment. Set by the fetch/decode loop when it consumes a
@@ -60,6 +66,7 @@ final class CPU8086 {
         flags = CPUFlags()
         lastFetchedOpcode = nil
         halted = false
+        fault = nil
         segmentOverride = nil
     }
 
@@ -246,6 +253,20 @@ final class CPU8086 {
             }
             flags.applyShiftRotate(outcome.flags)
             return shiftRotateClocks(for: destination, countSource: countSource, count: count, eaClocks: eaClocks)
+        case .testImmediateRM8(let destination, let immediate, let eaClocks):
+            let (_, arithmeticFlags) = ALU.and8(readOperand8(destination), immediate)
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 5 : 11 + eaClocks
+        case .testImmediateRM16(let destination, let immediate, let eaClocks):
+            let (_, arithmeticFlags) = ALU.and16(readOperand16(destination), immediate)
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 5 : 11 + eaClocks
+        case .unary8(let operation, let operand, let eaClocks):
+            executeUnary8(operation, operand: operand)
+            return unaryClocks(operation, isWord: false, isMemory: !isRegister(operand), eaClocks: eaClocks)
+        case .unary16(let operation, let operand, let eaClocks):
+            executeUnary16(operation, operand: operand)
+            return unaryClocks(operation, isWord: true, isMemory: !isRegister(operand), eaClocks: eaClocks)
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
             // ALU r/m8, r8 — a memory destination is read-modify-write
             // (16+EA), except CMP which only reads (9+EA).
@@ -428,6 +449,123 @@ final class CPU8086 {
         }
     }
 
+    private func executeUnary8(_ operation: UnaryOperation, operand: ModRMOperand) {
+        let source = readOperand8(operand)
+        switch operation {
+        case .not:
+            writeOperand8(~source, to: operand)
+        case .negate:
+            let outcome = ALU.subtract8(0, source)
+            writeOperand8(outcome.result, to: operand)
+            flags.applyArithmetic(outcome.flags)
+        case .multiplyUnsigned:
+            let product = UInt16(registers[.al]) * UInt16(source)
+            registers[.ax] = product
+            applyMultiplyFlags(product >> 8 != 0)
+        case .multiplySigned:
+            let product = Int16(Int8(bitPattern: registers[.al])) * Int16(Int8(bitPattern: source))
+            registers[.ax] = UInt16(bitPattern: product)
+            applyMultiplyFlags(product < Int16(Int8.min) || product > Int16(Int8.max))
+        case .divideUnsigned:
+            let divisor = UInt16(source)
+            guard divisor != 0 else { return raiseDivideError() }
+            let dividend = registers[.ax]
+            let quotient = dividend / divisor
+            guard quotient <= UInt16(UInt8.max) else { return raiseDivideError() }
+            registers[.al] = UInt8(quotient)
+            registers[.ah] = UInt8(dividend % divisor)
+        case .divideSigned:
+            let divisor = Int32(Int8(bitPattern: source))
+            guard divisor != 0 else { return raiseDivideError() }
+            let dividend = Int32(Int16(bitPattern: registers[.ax]))
+            let quotient = dividend / divisor
+            // Original 8086 silicon faults on the most-negative quotient too.
+            guard quotient > Int32(Int8.min), quotient <= Int32(Int8.max) else {
+                return raiseDivideError()
+            }
+            registers[.al] = UInt8(bitPattern: Int8(quotient))
+            registers[.ah] = UInt8(bitPattern: Int8(dividend % divisor))
+        }
+    }
+
+    private func executeUnary16(_ operation: UnaryOperation, operand: ModRMOperand) {
+        let source = readOperand16(operand)
+        switch operation {
+        case .not:
+            writeOperand16(~source, to: operand)
+        case .negate:
+            let outcome = ALU.subtract16(0, source)
+            writeOperand16(outcome.result, to: operand)
+            flags.applyArithmetic(outcome.flags)
+        case .multiplyUnsigned:
+            let product = UInt32(registers[.ax]) * UInt32(source)
+            registers[.ax] = UInt16(truncatingIfNeeded: product)
+            registers[.dx] = UInt16(product >> 16)
+            applyMultiplyFlags(product >> 16 != 0)
+        case .multiplySigned:
+            let product = Int32(Int16(bitPattern: registers[.ax])) * Int32(Int16(bitPattern: source))
+            let bits = UInt32(bitPattern: product)
+            registers[.ax] = UInt16(truncatingIfNeeded: bits)
+            registers[.dx] = UInt16(bits >> 16)
+            applyMultiplyFlags(product < Int32(Int16.min) || product > Int32(Int16.max))
+        case .divideUnsigned:
+            let divisor = UInt32(source)
+            guard divisor != 0 else { return raiseDivideError() }
+            let dividend = UInt32(registers[.dx]) << 16 | UInt32(registers[.ax])
+            let quotient = dividend / divisor
+            guard quotient <= UInt32(UInt16.max) else { return raiseDivideError() }
+            registers[.ax] = UInt16(quotient)
+            registers[.dx] = UInt16(dividend % divisor)
+        case .divideSigned:
+            let divisor = Int64(Int16(bitPattern: source))
+            guard divisor != 0 else { return raiseDivideError() }
+            let bits = UInt32(registers[.dx]) << 16 | UInt32(registers[.ax])
+            let dividend = Int64(Int32(bitPattern: bits))
+            let quotient = dividend / divisor
+            guard quotient > Int64(Int16.min), quotient <= Int64(Int16.max) else {
+                return raiseDivideError()
+            }
+            registers[.ax] = UInt16(bitPattern: Int16(quotient))
+            registers[.dx] = UInt16(bitPattern: Int16(dividend % divisor))
+        }
+    }
+
+    private func applyMultiplyFlags(_ hasSignificantHighHalf: Bool) {
+        flags[.carry] = hasSignificantHighHalf
+        flags[.overflow] = hasSignificantHighHalf
+    }
+
+    private func raiseDivideError() {
+        fault = .divideError
+        halted = true
+    }
+
+    /// MUL/DIV costs are operand-dependent ranges on the 8086. Until the core
+    /// models the microcode bit-by-bit, charge the rounded midpoint of Intel's
+    /// documented range; memory forms add their six-clock operand-access base
+    /// plus EA time.
+    private func unaryClocks(
+        _ operation: UnaryOperation,
+        isWord: Bool,
+        isMemory: Bool,
+        eaClocks: Int
+    ) -> Int {
+        let registerClocks: Int
+        switch (operation, isWord) {
+        case (.not, _), (.negate, _): registerClocks = 3
+        case (.multiplyUnsigned, false): registerClocks = 74
+        case (.multiplyUnsigned, true): registerClocks = 126
+        case (.multiplySigned, false): registerClocks = 89
+        case (.multiplySigned, true): registerClocks = 141
+        case (.divideUnsigned, false): registerClocks = 85
+        case (.divideUnsigned, true): registerClocks = 153
+        case (.divideSigned, false): registerClocks = 107
+        case (.divideSigned, true): registerClocks = 175
+        }
+        guard isMemory else { return registerClocks }
+        return (operation == .not || operation == .negate ? 16 : registerClocks + 6) + eaClocks
+    }
+
     private func readOperand8(_ operand: ModRMOperand) -> UInt8 {
         switch operand {
         case .register(let encoding): return registers[Register8(rawValue: encoding)!]
@@ -512,7 +650,8 @@ final class CPU8086 {
             ip: ip,
             flags: flags,
             lastFetchedOpcode: lastFetchedOpcode,
-            halted: halted
+            halted: halted,
+            fault: fault
         )
     }
 }
