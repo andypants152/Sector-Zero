@@ -233,12 +233,14 @@ struct InstructionDecoder {
             default: return .unknown(opcode)
             }
         case 0xFF:
-            // Word group. M27 owns /0 INC, /1 DEC and /6 PUSH; M28/M29 add
-            // the control-transfer selectors without changing this shape.
+            // Word group. /2 and /4 are absolute near transfers; the target
+            // comes from the selected register or memory word.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
             switch modRM.reg {
             case 0: return .incRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
             case 1: return .decRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
+            case 2: return .callNearIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
+            case 4: return .jumpNearIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
             case 6: return .pushRM16(source: modRM.operand, eaClocks: modRM.eaClocks)
             default: return .unknown(opcode)
             }

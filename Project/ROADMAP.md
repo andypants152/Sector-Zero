@@ -11,13 +11,13 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M27 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M28 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
-shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP).
-The next milestone is M28 below.
+shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
+indirect near CALL/JMP). The next milestone is M29 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -356,7 +356,7 @@ matrix introduced in M39 is the CPU-completion gate.
   default segment plus override, SP wrap, the 8086 PUSH-SP value quirk, POP into
   SP, and nonmatching group selectors staying byte-aligned.
 
-### M28 — Indirect near CALL/JMP (0xFF /2, /4)
+### M28 — Indirect near CALL/JMP (0xFF /2, /4) ✅
 - **Goal:** Allow procedure pointers and jump tables within the current code
   segment.
 - **Build:** `FF /2` CALL near absolute r/m16 pushes the post-decode IP, then

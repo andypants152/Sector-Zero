@@ -378,6 +378,13 @@ final class CPU8086 {
             push16(ip)
             ip = ip &+ UInt16(bitPattern: displacement)
             return 19
+        case .callNearIndirect(let source, let eaClocks):
+            // Resolve the absolute target before PUSH mutates SP. This is
+            // observable for CALL SP and keeps memory-source access ordered.
+            let target = readOperand16(source)
+            push16(ip)
+            ip = target
+            return isRegister(source) ? 16 : 21 + eaClocks
         case .returnNear:
             ip = pop16()
             return 16
@@ -394,6 +401,9 @@ final class CPU8086 {
             // IP already points past the disp16; branch relative with wrap.
             ip = ip &+ UInt16(bitPattern: displacement)
             return 15
+        case .jumpNearIndirect(let source, let eaClocks):
+            ip = readOperand16(source)
+            return isRegister(source) ? 11 : 18 + eaClocks
         case .jumpFar(let offset, let segment):
             // Direct intersegment: load CS and IP together, no flags touched.
             cs = segment
