@@ -57,12 +57,18 @@ enum Instruction: Equatable {
     case popRM16(destination: ModRMOperand, eaClocks: Int)
     case callNearRelative(displacement: Int16)
     case callNearIndirect(source: ModRMOperand, eaClocks: Int)
+    case callFar(offset: UInt16, segment: UInt16)
+    case callFarIndirect(source: ModRMOperand, eaClocks: Int)
     case returnNear
+    case returnNearAdjust(UInt16)
+    case returnFar
+    case returnFarAdjust(UInt16)
     case jumpConditional(condition: JumpCondition, displacement: Int8)
     case jumpShort(displacement: Int8)
     case jumpNear(displacement: Int16)
     case jumpNearIndirect(source: ModRMOperand, eaClocks: Int)
     case jumpFar(offset: UInt16, segment: UInt16)
+    case jumpFarIndirect(source: ModRMOperand, eaClocks: Int)
     case loop(condition: LoopCondition, displacement: Int8)
     case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)

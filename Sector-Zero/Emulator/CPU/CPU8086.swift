@@ -385,9 +385,38 @@ final class CPU8086 {
             push16(ip)
             ip = target
             return isRegister(source) ? 16 : 21 + eaClocks
+        case .callFar(let offset, let segment):
+            // Push CS first so the final stack top is the return IP consumed
+            // first by RETF.
+            push16(cs)
+            push16(ip)
+            cs = segment
+            ip = offset
+            return 28
+        case .callFarIndirect(let source, let eaClocks):
+            // Fetch both pointer words before stack traffic can overwrite them.
+            let target = readFarPointer(from: source)
+            push16(cs)
+            push16(ip)
+            cs = target.segment
+            ip = target.offset
+            return 37 + eaClocks
         case .returnNear:
             ip = pop16()
             return 16
+        case .returnNearAdjust(let adjustment):
+            ip = pop16()
+            registers[.sp] = registers[.sp] &+ adjustment
+            return 20
+        case .returnFar:
+            ip = pop16()
+            cs = pop16()
+            return 26
+        case .returnFarAdjust(let adjustment):
+            ip = pop16()
+            cs = pop16()
+            registers[.sp] = registers[.sp] &+ adjustment
+            return 25
         case .jumpConditional(let condition, let displacement):
             // IP already points past the displacement byte; a taken branch
             // adds the sign-extended offset with 16-bit wrap.
@@ -409,6 +438,11 @@ final class CPU8086 {
             cs = segment
             ip = offset
             return 15
+        case .jumpFarIndirect(let source, let eaClocks):
+            let target = readFarPointer(from: source)
+            cs = target.segment
+            ip = target.offset
+            return 24 + eaClocks
         case .loop(let condition, let displacement):
             // CX decrements unconditionally and without touching flags; the
             // branch tests the *new* CX (so entering with CX=0 wraps to
@@ -639,6 +673,21 @@ final class CPU8086 {
         case .register(let encoding): registers[Register16(rawValue: encoding)!] = value
         case .memory(let address): writeMemoryWord(value, at: resolved(address))
         }
+    }
+
+    /// Reads an m16:16 pointer using one resolved segment for both words. The
+    /// second word starts at offset+2 with 16-bit wrap within that segment.
+    private func readFarPointer(from operand: ModRMOperand) -> (offset: UInt16, segment: UInt16) {
+        guard case .memory(let address) = operand else {
+            preconditionFailure("Far indirect transfers require a memory operand")
+        }
+        let pointer = resolved(address)
+        let offset = readMemoryWord(at: pointer)
+        let segmentAddress = EffectiveAddress(
+            offset: pointer.offset &+ 2,
+            defaultSegment: pointer.defaultSegment
+        )
+        return (offset, readMemoryWord(at: segmentAddress))
     }
 
     /// Applies a pending segment override to a data operand's address. Stack

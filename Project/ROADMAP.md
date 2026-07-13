@@ -11,13 +11,14 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M28 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M29 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
-indirect near CALL/JMP). The next milestone is M29 below.
+indirect near CALL/JMP; far CALL/JMP and immediate/far RET). The next milestone
+is M30 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -368,7 +369,7 @@ matrix introduced in M39 is the CPU-completion gate.
   `RET`, target and stack wrap, segment override on a memory pointer, and exact
   clocks including EA cost.
 
-### M29 — Far CALL/JMP and immediate RET (0x9A, 0xCA–0xCB, 0xC2, 0xFF /3, /5)
+### M29 — Far CALL/JMP and immediate RET (0x9A, 0xCA–0xCB, 0xC2, 0xFF /3, /5) ✅
 - **Goal:** Complete inter-segment procedure and indirect transfer support.
 - **Build:** Direct far CALL (`9A`), indirect far CALL/JMP through m16:16
   (`FF /3`, `/5`), RET near imm16 (`C2`), RET far (`CB`), and RET far imm16

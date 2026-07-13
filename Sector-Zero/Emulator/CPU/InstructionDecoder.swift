@@ -129,8 +129,25 @@ struct InstructionDecoder {
             return .loop(condition: condition, displacement: Int8(bitPattern: nextByte()))
         case 0xE3:
             return .jumpIfCXZero(displacement: Int8(bitPattern: nextByte()))
+        case 0xC2, 0xCA:
+            let low = nextByte()
+            let high = nextByte()
+            let adjustment = UInt16(high) << 8 | UInt16(low)
+            return opcode == 0xC2 ? .returnNearAdjust(adjustment) : .returnFarAdjust(adjustment)
         case 0xC3:
             return .returnNear
+        case 0xCB:
+            return .returnFar
+        case 0x9A:
+            // CALL far (direct intersegment): little-endian offset then segment.
+            let offsetLow = nextByte()
+            let offsetHigh = nextByte()
+            let segmentLow = nextByte()
+            let segmentHigh = nextByte()
+            return .callFar(
+                offset: UInt16(offsetHigh) << 8 | UInt16(offsetLow),
+                segment: UInt16(segmentHigh) << 8 | UInt16(segmentLow)
+            )
         case 0xE8:
             // CALL near-relative: signed disp16, little-endian in the stream.
             let low = nextByte()
@@ -233,14 +250,20 @@ struct InstructionDecoder {
             default: return .unknown(opcode)
             }
         case 0xFF:
-            // Word group. /2 and /4 are absolute near transfers; the target
-            // comes from the selected register or memory word.
+            // Word group. /2 and /4 are absolute near transfers. /3 and /5
+            // read a far m16:16 pointer; their register forms are invalid.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
             switch modRM.reg {
             case 0: return .incRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
             case 1: return .decRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
             case 2: return .callNearIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
+            case 3:
+                guard case .memory = modRM.operand else { return .unknown(opcode) }
+                return .callFarIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
             case 4: return .jumpNearIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
+            case 5:
+                guard case .memory = modRM.operand else { return .unknown(opcode) }
+                return .jumpFarIndirect(source: modRM.operand, eaClocks: modRM.eaClocks)
             case 6: return .pushRM16(source: modRM.operand, eaClocks: modRM.eaClocks)
             default: return .unknown(opcode)
             }
