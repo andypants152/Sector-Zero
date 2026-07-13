@@ -46,6 +46,7 @@ final class Machine {
         self.bus = EmulatorBus(memory: memory)
         self.cpu = CPU8086(bus: bus)
         self.clock = ExecutionClock()
+        self.clockedDevices = [bus.intervalTimer]
         reset()
     }
 
@@ -59,6 +60,10 @@ final class Machine {
 
     var interruptController: ProgrammableInterruptController {
         bus.interruptController
+    }
+
+    var intervalTimer: ProgrammableIntervalTimer {
+        bus.intervalTimer
     }
 
     func reset() {
@@ -451,7 +456,8 @@ final class Machine {
             loadedSystemROMByteCount: bus.loadedSystemROMByteCount,
             lastMemoryMapError: bus.lastMemoryMapError,
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
-            interruptController: interruptController.snapshot
+            interruptController: interruptController.snapshot,
+            intervalTimer: intervalTimer.snapshot
         )
     }
 }

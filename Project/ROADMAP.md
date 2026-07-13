@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M42 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M43 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -23,8 +23,8 @@ CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
 sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
 completion policy; deterministic device scheduling and run/pause slices; PC
 physical memory map, protected system ROM, and project firmware loading; master
-8259A interrupt routing, masking, priority, and EOI). The next milestone is M43
-below.
+8259A interrupt routing, masking, priority, and EOI; deterministic 8253 timer,
+IRQ0, and channel-2 speaker gate). The next milestone is M44 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -606,7 +606,7 @@ every intentional deviation in a machine-profile document before M41.
   cover initialization and ports, masks, simultaneous priority, ISR blocking,
   EOI, edge/level transitions, IF gating, snapshots, and HLT wake.
 
-### M43 — 8253-compatible timer and channel-2 speaker gate
+### M43 — 8253-compatible timer and channel-2 speaker gate ✅
 - **Goal:** Provide BIOS timekeeping and the periodic IRQ0 source.
 - **Build:** Implement the PIT control/data ports and the counter modes required
   by BIOS/DOS, clocked deterministically from M40. Channel 0 raises IRQ0 through
@@ -614,6 +614,18 @@ every intentional deviation in a machine-profile document before M41.
 - **Don't:** Generate host audio yet or tie timer progress to display refresh.
 - **Tests:** Programming/latching, divisor-zero semantics, periodic IRQ cadence,
   mask/EOI interaction, channel-2 gate, and long-run determinism.
+- **Completed:** The bus installs a three-channel PIT at ports 40h–43h and a
+  minimal PC speaker-control endpoint at 61h. It implements binary modes 0, 2,
+  and 3, low/high/paired access, stable count latching, the 65,536 interpretation
+  of a zero divisor, gate-driven periodic restart, and mode-accurate output
+  transitions. One PIT input tick is accumulated for every four emulated CPU
+  clocks, independent of host time or scheduler batch size. Channel 0 drives
+  PIC IRQ0 with mask/in-service/EOI behavior supplied by M42; channel 2 exposes
+  its gate, raw output, speaker enable, and combined speaker output through
+  immutable snapshots. Tests cover terminal count, rate and square-wave
+  cadence, latching, zero divisors, PIC interaction, port 61h, reset, and
+  fragmented-versus-batched long runs. BCD counting and modes 1/4/5 remain
+  outside the firmware/DOS subset until software requires them.
 
 ### M44 — CGA-compatible text-mode adapter
 - **Goal:** Make guest video memory, not a scripted boot scene, drive the CRT.

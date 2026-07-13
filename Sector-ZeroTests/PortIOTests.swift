@@ -139,15 +139,15 @@ struct PortIOTests {
         #expect(byteMachine.cpu.flags.rawValue == byteFlags)
         #expect(byteMachine.cycleCount == 10)
 
-        let wordMachine = machineWithOpcodes([0xE7, 0x61])
+        let wordMachine = machineWithOpcodes([0xE7, 0x62])
         let wordDevice = SpyPortDevice()
-        wordMachine.bus.mapPortDevice(wordDevice, to: 0x0061...0x0061)
+        wordMachine.bus.mapPortDevice(wordDevice, to: 0x0062...0x0062)
         setRegisters(ax: 0xCAFE, dx: 0x5678, on: wordMachine)
         let wordFlags = setStableFlags(on: wordMachine)
 
         wordMachine.step()
 
-        #expect(wordDevice.events == [.writeWord(0x0061, 0xCAFE)])
+        #expect(wordDevice.events == [.writeWord(0x0062, 0xCAFE)])
         #expect(wordMachine.cpu.ax == 0xCAFE)
         #expect(wordMachine.cpu.dx == 0x5678)
         #expect(wordMachine.cpu.flags.rawValue == wordFlags)

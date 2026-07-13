@@ -82,6 +82,7 @@ final class EmulatorBus: Bus {
 
     private let memory: Memory
     let interruptController = ProgrammableInterruptController()
+    let intervalTimer: ProgrammableIntervalTimer
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
     /// adapters are page-aligned in normal operation, making the hot path one
@@ -100,6 +101,7 @@ final class EmulatorBus: Bus {
 
     init(memory: Memory, installPCMemoryMap: Bool = true) {
         self.memory = memory
+        self.intervalTimer = ProgrammableIntervalTimer(interruptController: interruptController)
         if installPCMemoryMap {
             precondition(memory.size >= Memory.addressableSize, "PC memory map requires 1 MiB of backing storage")
             try! mapRAM(Self.conventionalRAMRange, name: "Conventional RAM")
@@ -107,6 +109,8 @@ final class EmulatorBus: Bus {
             try! mapROM(Self.systemROMRange, image: [], name: "System ROM")
         }
         mapPortDevice(interruptController, to: ProgrammableInterruptController.commandPort...ProgrammableInterruptController.dataPort)
+        mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.channel0Port...ProgrammableIntervalTimer.controlPort)
+        mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.systemControlPort...ProgrammableIntervalTimer.systemControlPort)
     }
 
     func readByte(at address: UInt32) -> UInt8 {
