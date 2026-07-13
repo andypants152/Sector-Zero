@@ -19,7 +19,36 @@ enum Instruction: Equatable {
     case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
     case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)
     case aluRMToRegister16(op: ALUBinaryOp, destination: Register16, source: ModRMOperand, eaClocks: Int)
+    case jumpConditional(condition: JumpCondition, displacement: Int8)
+    case jumpShort(displacement: Int8)
     case unknown(UInt8)
+}
+
+/// A Jcc condition, from the low nibble of opcodes 0x70–0x7F. The low bit
+/// inverts the base predicate (JO/JNO, JB/JNB, …).
+struct JumpCondition: Equatable, Sendable {
+    let encoding: UInt8
+
+    init(encoding: UInt8) {
+        self.encoding = encoding & 0xF
+    }
+
+    /// The documented 8086 predicates: JO=OF, JB=CF, JZ=ZF, JBE=CF∨ZF,
+    /// JS=SF, JP=PF, JL=SF≠OF, JLE=ZF∨(SF≠OF); odd encodings negate.
+    func isSatisfied(by flags: CPUFlags) -> Bool {
+        let base: Bool
+        switch encoding >> 1 {
+        case 0: base = flags[.overflow]
+        case 1: base = flags[.carry]
+        case 2: base = flags[.zero]
+        case 3: base = flags[.carry] || flags[.zero]
+        case 4: base = flags[.sign]
+        case 5: base = flags[.parity]
+        case 6: base = flags[.sign] != flags[.overflow]
+        default: base = flags[.zero] || (flags[.sign] != flags[.overflow])
+        }
+        return encoding & 1 == 0 ? base : !base
+    }
 }
 
 /// A binary ALU operation decoded from an r/m↔reg opcode block. CMP computes

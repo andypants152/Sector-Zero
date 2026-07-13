@@ -14,8 +14,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
-(ALU flag engine + ADD), and M11 (SUB/CMP) are complete and tested. The next
-milestones are M12–M14 below.
+(ALU flag engine + ADD), M11 (SUB/CMP), and M12 (conditional jumps) are complete
+and tested. The next milestones are M13–M14 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -158,19 +158,13 @@ identically but `writesResult == false`, so nothing is written and its memory
 r/m-destination form costs 9+EA rather than SUB's read-modify-write 16+EA. The
 decoder's three ALU opcode blocks share one path keyed on opcode bits 5–3.
 
-### M12 — Conditional jumps (0x70–0x7F) + JMP short (0xEB)
-- **Goal:** Control flow; the CPU can finally loop and branch on M10/M11 flags.
-- **Build:** Decode a signed 8-bit displacement (relative to the *next*
-  instruction, i.e. applied after IP passed the operand). Implement all sixteen
-  Jcc opcodes — JO/JNO, JB/JNB, JZ/JNZ, JBE/JNBE, JS/JNS, JP/JNP, JL/JNL,
-  JLE/JNLE — as flag predicates over `CPUFlags` (JL/JLE use SF≠OF), plus
-  unconditional `EB`. Cycles: **16** taken / **4** not taken; JMP short **15** —
-  verify against the timing table.
-- **Don't:** Near/far JMP with 16-bit or absolute operands; LOOP/JCXZ.
-- **Tests:** each predicate against hand-set flag states (both taken and not);
-  backward displacement (a CMP/JNZ countdown loop actually terminates);
-  forward skip over an instruction; IP wraparound on branch; cycle split
-  between taken/not-taken.
+### M12 — Conditional jumps (0x70–0x7F) + JMP short (0xEB) ✅
+`JumpCondition` maps the opcode's low nibble to the eight base predicates
+(OF, CF, ZF, CF∨ZF, SF, PF, SF≠OF, ZF∨(SF≠OF)), with the low bit negating.
+Displacement is a signed disp8 applied after IP has passed the operand, with
+16-bit wrap. Cycles: 16 taken / 4 not taken; JMP short 15. Tested via a full
+predicate table, taken/not-taken cycle splits, a CMP/SUB+JNZ countdown loop,
+forward skips, and backward-wrap. Near/far 16-bit JMPs and LOOP/JCXZ deferred.
 
 ### M13 — Stack: PUSH/POP reg (0x50–0x5F)
 - **Goal:** The stack discipline (SS:SP, decrement-before-write) that CALL/RET

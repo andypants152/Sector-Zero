@@ -54,6 +54,14 @@ struct InstructionDecoder {
                     eaClocks: modRM.eaClocks
                 )
             }
+        case 0x70...0x7F:
+            // Jcc short: signed disp8 relative to the next instruction.
+            return .jumpConditional(
+                condition: JumpCondition(encoding: opcode & 0xF),
+                displacement: Int8(bitPattern: nextByte())
+            )
+        case 0xEB:
+            return .jumpShort(displacement: Int8(bitPattern: nextByte()))
         case 0x88, 0x89, 0x8A, 0x8B:
             // MOV r/m ↔ reg. Bit 0 selects width, bit 1 the direction
             // (0: reg is source, 1: reg is destination).

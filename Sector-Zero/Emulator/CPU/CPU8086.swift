@@ -161,6 +161,15 @@ final class CPU8086 {
             }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(source) ? 3 : 9 + eaClocks
+        case .jumpConditional(let condition, let displacement):
+            // IP already points past the displacement byte; a taken branch
+            // adds the sign-extended offset with 16-bit wrap.
+            guard condition.isSatisfied(by: flags) else { return 4 }
+            ip = ip &+ UInt16(bitPattern: Int16(displacement))
+            return 16
+        case .jumpShort(let displacement):
+            ip = ip &+ UInt16(bitPattern: Int16(displacement))
+            return 15
         case .unknown:
             return 3
         }
