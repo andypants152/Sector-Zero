@@ -19,6 +19,7 @@ struct SectorZeroWorkspaceView: View {
                 regularLayout
             }
         }
+        .safeAreaPadding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.sectorWorkspace)
         .alert("Machine Error", isPresented: errorBinding) {
@@ -152,23 +153,30 @@ struct SectorZeroWorkspaceView: View {
     }
 
     private var display: some View {
-        CRTMetalView(video: workspace.machineSnapshot.video)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.sectorBorder, lineWidth: 1)
-                    .allowsHitTesting(false)
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.sectorPanel)
+
+            CRTMetalView(video: workspace.machineSnapshot.video)
+                .padding(10)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.sectorBorder, lineWidth: 1)
+                .allowsHitTesting(false)
             }
-            #if os(macOS)
-            .overlay {
-                // Topmost so clicks reach it and focus keyboard capture.
-                MachineKeyCaptureView(workspace: workspace)
-            }
-            .help("Click to send keystrokes to the machine")
-            #endif
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .aspectRatio(4.0 / 3.0, contentMode: .fit)
-            .layoutPriority(1)
+        #if os(macOS)
+        .overlay {
+            // Topmost so clicks reach it and focus keyboard capture.
+            MachineKeyCaptureView(workspace: workspace)
+        }
+        .help("Click to send keystrokes to the machine")
+        #endif
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+        .layoutPriority(1)
     }
 
     @ViewBuilder
