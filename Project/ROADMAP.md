@@ -11,19 +11,21 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M32 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M33 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
-MOVS/LODS/STOS; CMPS/SCAS). The next milestone is M33 below.
+MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE). The next milestone is M34 below.
 
-**Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
-instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
-0x3E prefixes in a loop (2 clocks each, last wins), sets the override, then
-decodes+executes+clears — one atomic step, no snapshot sees it set. **All
+**Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
+instruction's *data-operand* segment. `Machine.step()` consumes segment and
+repeat prefixes in one loop (2 clocks each; last of each kind wins), then
+decodes+executes+clears — one atomic step, no snapshot sees the override set.
+REP execution is centralized in `CPU8086.executeRepeated`, ready for an
+interrupt boundary between iterations in M35. **All
 memory-operand access must route through `resolved(_:)`** (the operand
 read/write helpers and moffs do; stack/code accesses deliberately don't). New
 memory-touching instructions (string ops, PUSH/POP m16) must honor it too.
@@ -411,7 +413,7 @@ matrix introduced in M39 is the CPU-completion gate.
 - **Tests:** Equality/borrow/overflow flag cases, byte and word forms, both DF
   directions, source override only for CMPS, offset wrap, and operand order.
 
-### M33 — REP/REPE/REPNE prefixes (0xF2–0xF3)
+### M33 — REP/REPE/REPNE prefixes (0xF2–0xF3) ✅
 - **Goal:** Run counted string operations with authentic CX and ZF gates.
 - **Build:** Extend the prefix loop so segment and repeat prefixes compose, last
   repeat prefix wins, and the entire prefixed instruction remains one

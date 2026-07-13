@@ -1,5 +1,21 @@
 import Foundation
 
+/// F3 selects the equal gate and F2 the not-equal gate for comparison strings;
+/// either prefix repeats movement strings unconditionally. Multiple repeat
+/// prefixes are legal and the last one before the opcode wins.
+enum RepeatPrefix: Equatable, Sendable {
+    case whileEqual
+    case whileNotEqual
+
+    init?(opcode: UInt8) {
+        switch opcode {
+        case 0xF3: self = .whileEqual
+        case 0xF2: self = .whileNotEqual
+        default: return nil
+        }
+    }
+}
+
 /// A decoded 8086 instruction, independent of how its bytes were fetched.
 ///
 /// Milestone 3 covers only the single-byte opcodes NOP and HLT; any other

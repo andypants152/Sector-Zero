@@ -36,17 +36,25 @@ final class Machine {
     func step() {
         guard !cpu.halted else { return }
         var cycles = 0
-        // Consume any segment-override prefixes first; the prefix and the
-        // instruction it modifies form one uninterruptible unit. Each prefix
-        // costs 2 clocks and the last one before the opcode wins.
+        // Consume segment and repeat prefixes in any order. The prefixes and
+        // instruction form one atomic step; each prefix costs 2 clocks and the
+        // last prefix of each kind wins.
         var opcode = cpu.fetch()
-        while let override = SegmentRegister(overridePrefix: opcode) {
-            cpu.setSegmentOverride(override)
+        var repeatPrefix: RepeatPrefix?
+        while true {
+            if let override = SegmentRegister(overridePrefix: opcode) {
+                cpu.setSegmentOverride(override)
+            } else if let repeatValue = RepeatPrefix(opcode: opcode) {
+                repeatPrefix = repeatValue
+            } else {
+                break
+            }
             cycles += 2
             opcode = cpu.fetch()
         }
         let instruction = decoder.decode(opcode: opcode, registers: cpu.registers, nextByte: cpu.fetch)
-        cycles += cpu.execute(instruction)
+        cycles += repeatPrefix.map { cpu.executeRepeated(instruction, prefix: $0) }
+            ?? cpu.execute(instruction)
         cpu.clearSegmentOverride()
         clock.advance(by: cycles)
     }

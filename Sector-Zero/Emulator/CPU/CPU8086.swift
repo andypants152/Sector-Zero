@@ -549,6 +549,32 @@ final class CPU8086 {
         }
     }
 
+    /// Executes a repeat-prefixed string instruction as one atomic operation.
+    /// The caller has already charged 2 clocks for the prefix; the 7 clocks
+    /// here complete the documented 9-clock setup. Non-string instructions
+    /// execute once, leaving the prefix with consumption cost only.
+    func executeRepeated(_ instruction: Instruction, prefix: RepeatPrefix) -> Int {
+        guard let iterationClocks = repeatIterationClocks(for: instruction) else {
+            return execute(instruction)
+        }
+
+        var cycles = 7
+        while registers[.cx] != 0 {
+            // CX is decremented before each data iteration, matching the 8086
+            // repeat flow and making CX observable at a future interrupt point.
+            registers[.cx] = registers[.cx] &- 1
+            _ = execute(instruction)
+            cycles += iterationClocks
+
+            guard isComparingString(instruction) else { continue }
+            let shouldContinue = prefix == .whileEqual
+                ? flags[.zero]
+                : !flags[.zero]
+            if !shouldContinue { break }
+        }
+        return cycles
+    }
+
     /// Writes a segment register. Used by tests today; MOV sreg (0x8E) and
     /// POP sreg will route through it when they land.
     func writeSegment(_ value: UInt16, to segment: SegmentRegister) {
@@ -581,6 +607,24 @@ final class CPU8086 {
         registers[register] = flags[.direction]
             ? registers[register] &- amount
             : registers[register] &+ amount
+    }
+
+    private func repeatIterationClocks(for instruction: Instruction) -> Int? {
+        switch instruction {
+        case .moveString: 17
+        case .compareString: 22
+        case .scanString: 15
+        case .loadString: 13
+        case .storeString: 10
+        default: nil
+        }
+    }
+
+    private func isComparingString(_ instruction: Instruction) -> Bool {
+        switch instruction {
+        case .compareString, .scanString: true
+        default: false
+        }
     }
 
     private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {
