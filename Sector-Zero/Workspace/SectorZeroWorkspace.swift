@@ -10,10 +10,19 @@ final class SectorZeroWorkspace {
     var currentProject: SectorZeroProject?
     var recentProjects: [RecentProject]
     var errorMessage: String?
-    let cpu = CPU8086()
+    let machine = Machine()
+    private(set) var machineSnapshot: MachineSnapshot
 
     init() {
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey)
+        self.machineSnapshot = machine.snapshot()
+    }
+
+    /// Advances the emulated machine by one instruction step and republishes the
+    /// resulting state so observing views refresh.
+    func step() {
+        machine.step()
+        machineSnapshot = machine.snapshot()
     }
 
     var windowTitle: String {

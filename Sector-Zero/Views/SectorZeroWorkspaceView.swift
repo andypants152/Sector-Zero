@@ -66,7 +66,27 @@ struct SectorZeroWorkspaceView: View {
                 .tracking(2)
                 .foregroundStyle(Color.sectorText)
             Spacer(minLength: 0)
+            stepButton
         }
+    }
+
+    private var stepButton: some View {
+        Button {
+            workspace.step()
+        } label: {
+            Text("STEP")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(1.5)
+                .foregroundStyle(Color.sectorText)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.sectorScreenBorder, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .help("Fetch the next opcode at CS:IP")
     }
 
     private var display: some View {
@@ -86,13 +106,13 @@ struct SectorZeroWorkspaceView: View {
         if isCompact {
             VStack(spacing: 14) {
                 display
-                CPUInspectorView(cpu: workspace.cpu)
+                CPUInspectorView(state: workspace.machineSnapshot)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
             HStack(alignment: .top, spacing: 16) {
                 display
-                CPUInspectorView(cpu: workspace.cpu)
+                CPUInspectorView(state: workspace.machineSnapshot)
             }
         }
     }

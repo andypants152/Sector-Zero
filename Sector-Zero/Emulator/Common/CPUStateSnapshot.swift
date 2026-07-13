@@ -15,6 +15,13 @@ struct CPUStateSnapshot: Equatable, Sendable {
     let ss: UInt16
     let ip: UInt16
     let flags: CPUFlags
+    let lastFetchedOpcode: UInt8?
+
+    /// Two-digit hex of the last fetched opcode, or "--" when nothing has been
+    /// fetched since reset.
+    var lastFetchedOpcodeText: String {
+        lastFetchedOpcode.map { String(format: "%02X", $0) } ?? "--"
+    }
 
     var generalRegisters: [RegisterValue] {
         [

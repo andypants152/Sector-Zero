@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct CPUInspectorView: View {
-    let cpu: CPU8086
+    let state: MachineSnapshot
 
-    private var state: CPUStateSnapshot {
-        cpu.dumpState()
-    }
+    private var cpu: CPUStateSnapshot { state.cpu }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -14,12 +12,13 @@ struct CPUInspectorView: View {
                 .tracking(1.4)
                 .foregroundStyle(Color.cpuInspectorHeading)
 
-            registerSection("GENERAL", registers: state.generalRegisters)
-            registerSection("INDEX", registers: state.indexRegisters)
-            registerSection("POINTER", registers: state.pointerRegisters)
-            registerSection("SEGMENT", registers: state.segmentRegisters)
+            registerSection("GENERAL", registers: cpu.generalRegisters)
+            registerSection("INDEX", registers: cpu.indexRegisters)
+            registerSection("POINTER", registers: cpu.pointerRegisters)
+            registerSection("SEGMENT", registers: cpu.segmentRegisters)
 
-            registerRow(name: "IP", value: state.ip)
+            registerRow(name: "IP", value: cpu.ip)
+            codeAddressSection
 
             Divider()
                 .overlay(Color.cpuInspectorBorder)
@@ -61,6 +60,32 @@ struct CPUInspectorView: View {
         }
     }
 
+    private var codeAddressSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle("CLOCK")
+            valueRow(name: "CYC", value: String(state.cycleCount))
+            valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip))
+            valueRow(name: "PHYS", value: String(format: "%05X", state.physicalCodeAddress))
+            valueRow(name: "OPC", value: cpu.lastFetchedOpcodeText)
+        }
+    }
+
+    private func valueRow(name: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(name)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.cpuInspectorMutedText)
+                .frame(width: 42, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.cpuInspectorText)
+                .textSelection(.enabled)
+        }
+    }
+
     private var flagsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("FLAGS")
@@ -69,7 +94,7 @@ struct CPUInspectorView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.cpuInspectorMutedText)
                 Spacer(minLength: 0)
-                Text(state.flags.hexValue)
+                Text(cpu.flags.hexValue)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.cpuInspectorText)
                     .textSelection(.enabled)
@@ -79,7 +104,7 @@ struct CPUInspectorView: View {
                 ForEach(CPUFlag.allCases) { flag in
                     Text(flag.shortName)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(state.flags[flag] ? Color.cpuInspectorActiveFlag : Color.cpuInspectorMutedText)
+                        .foregroundStyle(cpu.flags[flag] ? Color.cpuInspectorActiveFlag : Color.cpuInspectorMutedText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .help(flag.displayName)
                 }
@@ -109,7 +134,7 @@ private extension Color {
 }
 
 #Preview {
-    CPUInspectorView(cpu: CPU8086())
+    CPUInspectorView(state: Machine().snapshot())
         .padding()
         .background(Color.black)
 }

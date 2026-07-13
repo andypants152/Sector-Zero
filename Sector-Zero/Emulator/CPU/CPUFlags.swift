@@ -79,6 +79,14 @@ struct CPUFlags: Equatable, Sendable {
         String(format: "%04X", rawValue)
     }
 
-    private static let reservedMask: UInt16 = 0x0002
+    /// Bits hard-wired to 1 on the 8086/8088 and impossible to clear: bit 1,
+    /// plus bits 12–15. IOPL (12–13), NT (14) and MD (15) have no meaning on the
+    /// 8086 and always read back as 1. Bits 3 and 5 are hard-wired to 0 and are
+    /// never touched by any flag, so they stay clear on their own. Forcing this
+    /// mask keeps every `CPUFlags` value consistent with real 8086 silicon.
+    private static let reservedMask: UInt16 = 0xF002
+
+    /// After RESET the 8086 clears every condition and control flag, leaving only
+    /// the hard-wired reserved bits set — i.e. the FLAGS register reads 0xF002.
     private static let resetRawValue: UInt16 = reservedMask
 }

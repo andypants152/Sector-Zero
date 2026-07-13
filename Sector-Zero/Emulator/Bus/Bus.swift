@@ -8,13 +8,18 @@ protocol Bus: AnyObject {
 }
 
 final class EmulatorBus: Bus {
-    // Temporary open-bus stub. RAM, ROM, video memory, and devices will attach
-    // here instead of being reached directly by CPU code.
+    private let memory: Memory
+
+    init(memory: Memory) {
+        self.memory = memory
+    }
+
     func readByte(at address: UInt32) -> UInt8 {
-        0
+        (try? memory.readByte(at: address)) ?? 0
     }
 
     func writeByte(_ value: UInt8, at address: UInt32) {
+        try? memory.writeByte(value, at: address)
     }
 
     func readWord(at address: UInt32) -> UInt16 {
