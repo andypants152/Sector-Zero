@@ -96,6 +96,7 @@ final class EmulatorBus: Bus {
     let peripheralInterface: ProgrammablePeripheralInterface
     let cgaAdapter = CGATextModeAdapter()
     let floppyController: FloppyDiskController
+    let diagnosticPort = DiagnosticPort()
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
     /// adapters are page-aligned in normal operation, making the hot path one
@@ -140,6 +141,7 @@ final class EmulatorBus: Bus {
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.crtcIndexPort...CGATextModeAdapter.crtcDataPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.modeControlPort...CGATextModeAdapter.statusPort)
         mapPortDevice(floppyController, to: FloppyDiskController.portRange)
+        mapPortDevice(diagnosticPort, to: DiagnosticPort.port...DiagnosticPort.port)
     }
 
     func readByte(at address: UInt32) -> UInt8 {

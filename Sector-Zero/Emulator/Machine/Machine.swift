@@ -98,6 +98,10 @@ final class Machine {
         bus.floppyController
     }
 
+    var diagnosticPort: DiagnosticPort {
+        bus.diagnosticPort
+    }
+
     var cgaAdapter: CGATextModeAdapter {
         bus.cgaAdapter
     }
@@ -107,6 +111,7 @@ final class Machine {
         dmaController.reset()
         interruptController.reset()
         floppyController.reset()
+        diagnosticPort.reset()
         cpu.reset()
         clock.reset()
         pendingNMI = false
@@ -555,6 +560,7 @@ final class Machine {
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
             dmaController: dmaController.snapshot,
             floppyController: floppyController.snapshot,
+            diagnosticPort: diagnosticPort.snapshot,
             interruptController: interruptController.snapshot,
             intervalTimer: intervalTimer.snapshot,
             peripheralInterface: bus.peripheralInterface.snapshot,

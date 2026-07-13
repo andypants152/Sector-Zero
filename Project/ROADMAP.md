@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M47 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M48 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -27,8 +27,9 @@ physical memory map, protected system ROM, and project firmware loading; master
 IRQ0, and channel-2 speaker gate; CGA 80×25 text VRAM, CRTC state, and snapshot-
 driven CRT rendering; XT keyboard scan-code delivery through the 8255/PIC;
 8237A floppy-channel DMA with page wrapping, terminal count, masking, and cycle
-accounting; and a 765-compatible read-only floppy path with project media
-mount/eject). The next milestone is M48 below.
+accounting; a 765-compatible read-only floppy path with project media
+mount/eject; and a reproducible clean-room BIOS with POST diagnostics and
+boot-path interrupt services). The next milestone is M49 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -755,7 +756,7 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
   formatting, deleted-data scans, copy protection, and additional drives remain
   deferred.
 
-### M48 — Clean-room BIOS foundation and diagnostics
+### M48 — Clean-room BIOS foundation and diagnostics ✅
 - **Goal:** Execute real firmware from the reset vector and prove the whole
   machine before attempting DOS.
 - **Build:** Add a reproducible firmware build artifact that initializes the
@@ -766,6 +767,24 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
   interrupt handlers.
 - **Tests:** Reproducible ROM build, POST state, service contracts, diagnostic
   pass under bounded cycles, and failures that identify the responsible device.
+- **Completed:** A checked-in 64 KiB clean-room ROM now builds byte-for-byte from
+  `m48-bios.s` using the native Xcode assembler plus a small checked-in Mach-O
+  text-section extractor. From the architectural reset vector it establishes a
+  0000:7000 stack, clears the IVT/BDA, installs IRQ0/1/6 and INT 10h/13h/16h/1Ah
+  vectors, verifies RAM and CGA VRAM, resets/senses the floppy controller, and
+  programs the master PIC, PIT channel 0, CGA text mode, and XT keyboard clear
+  handshake. POST emits ordered progress/failure bytes to passive test-only port
+  E9h and reports PASS/FAIL through guest text video. The initial BIOS contract
+  provides INT 10h/AH=0Eh teletype, INT 13h/AH=00h reset and AH=02h CHS reads,
+  INT 16h/AH=00h wait and AH=01h peek, and INT 1Ah/AH=00h tick reads. INT 13h
+  computes the ES:BX DMA page/address, programs channel 2, issues a real 765 READ
+  DATA command, waits through IRQ6, validates result bytes, and returns BIOS
+  carry/status without a host-side service shortcut. Tests rebuild the ROM,
+  require exact artifact equality, boot POST under a deterministic instruction
+  bound, inspect initialized IVT/BDA/device state, exercise video/time/keyboard
+  service contracts, transfer a fixture sector through FDC+DMA, execute injected
+  RAM/video/PIC/floppy failure variants with distinct codes, and verify the
+  diagnostic recorder is passive, bounded, snapshotted, and resettable.
 
 ### M49 — Boot-sector execution gate
 - **Goal:** Reach and execute sector 0 from an unmodified disk image.

@@ -14,6 +14,7 @@ struct MachineSnapshot: Equatable, Sendable {
     let rejectedROMWriteCount: Int
     let dmaController: DirectMemoryAccessControllerSnapshot
     let floppyController: FloppyDiskControllerSnapshot
+    let diagnosticPort: DiagnosticPortSnapshot
     let interruptController: ProgrammableInterruptControllerSnapshot
     let intervalTimer: ProgrammableIntervalTimerSnapshot
     let peripheralInterface: ProgrammablePeripheralInterfaceSnapshot
