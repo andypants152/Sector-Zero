@@ -325,6 +325,26 @@ final class CPU8086 {
             registers[register] = result
             flags.applyArithmeticPreservingCarry(arithmeticFlags)
             return 3
+        case .incRM8(let destination, let eaClocks):
+            let outcome = ALU.add8(readOperand8(destination), 1)
+            writeOperand8(outcome.result, to: destination)
+            flags.applyArithmeticPreservingCarry(outcome.flags)
+            return isRegister(destination) ? 3 : 15 + eaClocks
+        case .decRM8(let destination, let eaClocks):
+            let outcome = ALU.subtract8(readOperand8(destination), 1)
+            writeOperand8(outcome.result, to: destination)
+            flags.applyArithmeticPreservingCarry(outcome.flags)
+            return isRegister(destination) ? 3 : 15 + eaClocks
+        case .incRM16(let destination, let eaClocks):
+            let outcome = ALU.add16(readOperand16(destination), 1)
+            writeOperand16(outcome.result, to: destination)
+            flags.applyArithmeticPreservingCarry(outcome.flags)
+            return isRegister(destination) ? 3 : 15 + eaClocks
+        case .decRM16(let destination, let eaClocks):
+            let outcome = ALU.subtract16(readOperand16(destination), 1)
+            writeOperand16(outcome.result, to: destination)
+            flags.applyArithmeticPreservingCarry(outcome.flags)
+            return isRegister(destination) ? 3 : 15 + eaClocks
         case .pushRegister16(let register):
             // The register is read *after* SP moves, so PUSH SP stores the
             // decremented value — the documented 8086 quirk (80286+ store the
@@ -335,6 +355,23 @@ final class CPU8086 {
         case .popRegister16(let register):
             registers[register] = pop16()
             return 8
+        case .pushRM16(let source, let eaClocks):
+            if source == .register(Register16.sp.rawValue) {
+                // Like the one-byte form, FF /6 PUSH SP observes SP after
+                // decrementing it on the original 8086.
+                registers[.sp] = registers[.sp] &- 2
+                writeMemoryWord(registers[.sp], at: EffectiveAddress(offset: registers[.sp], defaultSegment: .ss))
+            } else {
+                // Resolve/read a memory source before stack mutation.
+                push16(readOperand16(source))
+            }
+            return isRegister(source) ? 11 : 16 + eaClocks
+        case .popRM16(let destination, let eaClocks):
+            // Stack traffic is SS-relative; only the destination goes through
+            // the regular operand helper (and therefore a segment override).
+            let value = pop16()
+            writeOperand16(value, to: destination)
+            return isRegister(destination) ? 8 : 17 + eaClocks
         case .callNearRelative(let displacement):
             // IP already points past the displacement word, so it is the
             // return address; push it, then branch relative with 16-bit wrap.

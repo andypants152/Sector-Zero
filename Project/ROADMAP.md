@@ -11,13 +11,13 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M26 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M27 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
-shifts/rotates; unary arithmetic incl. multiply/divide). The next milestone is
-M27 below.
+shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP).
+The next milestone is M28 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -343,7 +343,7 @@ These milestones finish the documented 8086 integer surface before peripheral
 work begins. Keep each milestone independently shippable; an opcode-coverage
 matrix introduced in M39 is the CPU-completion gate.
 
-### M27 — Remaining r/m stack and INC/DEC forms (0x8F, 0xFE, 0xFF /0, /1, /6)
+### M27 — Remaining r/m stack and INC/DEC forms (0x8F, 0xFE, 0xFF /0, /1, /6) ✅
 - **Goal:** Remove the last register-only restrictions from basic stack and
   unary operations.
 - **Build:** `FE /0` and `/1` INC/DEC r/m8; `FF /0` and `/1` INC/DEC r/m16;

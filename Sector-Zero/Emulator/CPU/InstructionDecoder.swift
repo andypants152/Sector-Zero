@@ -218,6 +218,30 @@ struct InstructionDecoder {
             let value = nextByte()
             guard modRM.reg == 0 else { return .unknown(opcode) }
             return .movImmediateToRM8(destination: modRM.operand, value: value, eaClocks: modRM.eaClocks)
+        case 0x8F:
+            // POP r/m16 is /0. Unsupported selectors still consume the full
+            // ModR/M and displacement before decoding as unknown.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            guard modRM.reg == 0 else { return .unknown(opcode) }
+            return .popRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
+        case 0xFE:
+            // Byte INC/DEC group: /0 INC, /1 DEC.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            switch modRM.reg {
+            case 0: return .incRM8(destination: modRM.operand, eaClocks: modRM.eaClocks)
+            case 1: return .decRM8(destination: modRM.operand, eaClocks: modRM.eaClocks)
+            default: return .unknown(opcode)
+            }
+        case 0xFF:
+            // Word group. M27 owns /0 INC, /1 DEC and /6 PUSH; M28/M29 add
+            // the control-transfer selectors without changing this shape.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            switch modRM.reg {
+            case 0: return .incRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
+            case 1: return .decRM16(destination: modRM.operand, eaClocks: modRM.eaClocks)
+            case 6: return .pushRM16(source: modRM.operand, eaClocks: modRM.eaClocks)
+            default: return .unknown(opcode)
+            }
         case 0xD0...0xD3:
             // Shift/rotate group: bit 0 selects width; bit 1 selects the
             // implicit count 1 vs. the full, unmasked CL value. /6 is not a
