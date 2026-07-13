@@ -68,6 +68,7 @@ struct SectorZeroWorkspaceView: View {
                 .foregroundStyle(Color.sectorText)
             statusChip
             Spacer(minLength: 0)
+            speedPicker
             runPauseButton
             stepButton
             resetButton
@@ -95,6 +96,22 @@ struct SectorZeroWorkspaceView: View {
         .help(workspace.machineConditionDetail ?? "Machine condition")
         .accessibilityIdentifier("machineStatusChip")
         .accessibilityLabel("Machine status: \(condition.label)")
+    }
+
+    private var speedPicker: some View {
+        Menu {
+            Picker("Run Speed", selection: $workspace.runSpeedCap) {
+                ForEach(RunSpeedCap.allCases) { cap in
+                    Text(cap.label).tag(cap)
+                }
+            }
+        } label: {
+            controlLabel("SPEED \(workspace.runSpeedCap.detailLabel)")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help("Cap run speed")
+        .accessibilityIdentifier("runSpeedPicker")
     }
 
     private var runPauseButton: some View {

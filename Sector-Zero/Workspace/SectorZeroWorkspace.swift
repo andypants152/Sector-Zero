@@ -3,18 +3,67 @@ import Observation
 
 private final class MachineRunControl: @unchecked Sendable {
     private let lock = NSLock()
-    private var pauseRequested = false
+    nonisolated(unsafe) private var pauseRequested = false
+    nonisolated(unsafe) private var runSpeedCyclesPerSecond: Double?
 
-    func begin() {
+    nonisolated func begin() {
         lock.withLock { pauseRequested = false }
     }
 
-    func requestPause() {
+    nonisolated func setRunSpeedCap(_ cap: RunSpeedCap) {
+        lock.withLock { runSpeedCyclesPerSecond = cap.cyclesPerSecond }
+    }
+
+    nonisolated func currentRunSpeedCyclesPerSecond() -> Double? {
+        lock.withLock { runSpeedCyclesPerSecond }
+    }
+
+    nonisolated func requestPause() {
         lock.withLock { pauseRequested = true }
     }
 
-    func shouldPause() -> Bool {
+    nonisolated func shouldPause() -> Bool {
         lock.withLock { pauseRequested }
+    }
+}
+
+enum RunSpeedCap: String, CaseIterable, Identifiable, Sendable {
+    case khz250
+    case khz500
+    case mhz1
+    case mhz2
+    case pcXT
+    case unlimited
+
+    nonisolated var id: String { rawValue }
+
+    nonisolated var label: String {
+        switch self {
+        case .khz250: "250 KHz"
+        case .khz500: "500 KHz"
+        case .mhz1: "1 MHz"
+        case .mhz2: "2 MHz"
+        case .pcXT: "4.77 MHz"
+        case .unlimited: "Unlimited"
+        }
+    }
+
+    nonisolated var detailLabel: String {
+        switch self {
+        case .pcXT: "PC/XT"
+        default: label
+        }
+    }
+
+    nonisolated var cyclesPerSecond: Double? {
+        switch self {
+        case .khz250: 250_000
+        case .khz500: 500_000
+        case .mhz1: 1_000_000
+        case .mhz2: 2_000_000
+        case .pcXT: 4_770_000
+        case .unlimited: nil
+        }
     }
 }
 
@@ -41,6 +90,7 @@ struct MachineCondition: Equatable, Sendable {
 @Observable
 final class SectorZeroWorkspace {
     private let recentProjectsKey = "SectorZero.RecentProjects"
+    private let runSpeedCapKey = "SectorZero.RunSpeedCap"
     private let maximumRecentProjects = 8
     private let userDefaults: UserDefaults
 
@@ -52,6 +102,12 @@ final class SectorZeroWorkspace {
     private(set) var machineSnapshot: MachineSnapshot
     private(set) var isRunning = false
     private(set) var lastRunStopReason: MachineRunStopReason?
+    var runSpeedCap: RunSpeedCap = .pcXT {
+        didSet {
+            runControl.setRunSpeedCap(runSpeedCap)
+            userDefaults.set(runSpeedCap.rawValue, forKey: runSpeedCapKey)
+        }
+    }
     private let runControl = MachineRunControl()
     private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
     private var activeRunID: UUID?
@@ -62,14 +118,18 @@ final class SectorZeroWorkspace {
         self.machine = machine
         self.userDefaults = userDefaults
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
+        self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
+        self.runControl.setRunSpeedCap(runSpeedCap)
     }
 
     init(machine: Machine, userDefaults: UserDefaults = .standard) {
         self.machine = machine
         self.userDefaults = userDefaults
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
+        self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
+        self.runControl.setRunSpeedCap(runSpeedCap)
     }
 
     /// Advances the emulated machine by one instruction step and republishes the
@@ -168,9 +228,11 @@ final class SectorZeroWorkspace {
         executionQueue.async { [weak self] in
             while true {
                 guard self != nil else { return }
+                let sliceStart = Date.timeIntervalSinceReferenceDate
                 let result = machine.runSlice(maxInstructions: sliceLimit) {
                     control.shouldPause()
                 }
+                Self.throttle(result.elapsedClocks, startedAt: sliceStart, control: control)
                 Task { @MainActor [weak self] in
                     self?.publish(result, for: runID)
                 }
@@ -180,6 +242,25 @@ final class SectorZeroWorkspace {
                 }
             }
         }
+    }
+
+    private nonisolated static func throttle(
+        _ elapsedClocks: UInt64,
+        startedAt sliceStart: TimeInterval,
+        control: MachineRunControl
+    ) {
+        guard elapsedClocks > 0,
+              let cyclesPerSecond = control.currentRunSpeedCyclesPerSecond(),
+              cyclesPerSecond > 0 else {
+            return
+        }
+
+        let targetDuration = Double(elapsedClocks) / cyclesPerSecond
+        let actualDuration = Date.timeIntervalSinceReferenceDate - sliceStart
+        let sleepDuration = targetDuration - actualDuration
+        guard sleepDuration > 0 else { return }
+
+        Thread.sleep(forTimeInterval: sleepDuration)
     }
 
     /// Requests a pause. The execution queue observes it before the next
@@ -400,6 +481,15 @@ final class SectorZeroWorkspace {
             userDefaults.set(data, forKey: key)
         }
         return existingProjects
+    }
+
+    private static func loadRunSpeedCap(key: String, from userDefaults: UserDefaults) -> RunSpeedCap {
+        guard let rawValue = userDefaults.string(forKey: key),
+              let cap = RunSpeedCap(rawValue: rawValue) else {
+            return .pcXT
+        }
+
+        return cap
     }
 
     private static let encoder: JSONEncoder = {

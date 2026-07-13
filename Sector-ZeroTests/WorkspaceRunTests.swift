@@ -12,6 +12,13 @@ struct WorkspaceRunTests {
         return SectorZeroWorkspace(machine: machine)
     }
 
+    private func isolatedDefaults() -> UserDefaults {
+        let suiteName = "SectorZeroWorkspaceRunTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 2_000_000_000,
         _ condition: @escaping @MainActor () -> Bool
@@ -67,5 +74,25 @@ struct WorkspaceRunTests {
         #expect(workspace.machineSnapshot.cycleCount == 0)
         #expect(workspace.machineSnapshot.cpu.ip == 0)
         #expect(workspace.lastRunStopReason == nil)
+    }
+
+    @Test("Run speed cap defaults to PC/XT speed")
+    func defaultRunSpeedCap() {
+        let workspace = SectorZeroWorkspace(userDefaults: isolatedDefaults())
+
+        #expect(workspace.runSpeedCap == .pcXT)
+        #expect(workspace.runSpeedCap.cyclesPerSecond == 4_770_000)
+    }
+
+    @Test("Run speed cap persists as a workspace preference")
+    func runSpeedCapPersists() {
+        let defaults = isolatedDefaults()
+        let workspace = SectorZeroWorkspace(userDefaults: defaults)
+
+        workspace.runSpeedCap = .khz500
+        let reloaded = SectorZeroWorkspace(userDefaults: defaults)
+
+        #expect(reloaded.runSpeedCap == .khz500)
+        #expect(reloaded.runSpeedCap.cyclesPerSecond == 500_000)
     }
 }
