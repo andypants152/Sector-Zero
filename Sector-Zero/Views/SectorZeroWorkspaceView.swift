@@ -66,27 +66,45 @@ struct SectorZeroWorkspaceView: View {
                 .tracking(2)
                 .foregroundStyle(Color.sectorText)
             Spacer(minLength: 0)
+            runPauseButton
             stepButton
         }
+    }
+
+    private var runPauseButton: some View {
+        Button {
+            workspace.toggleRunPause()
+        } label: {
+            controlLabel(workspace.runButtonTitle)
+        }
+        .buttonStyle(.plain)
+        .help(workspace.isRunning ? "Pause at the next instruction boundary" : "Run the machine")
+        .accessibilityIdentifier("runPauseButton")
     }
 
     private var stepButton: some View {
         Button {
             workspace.step()
         } label: {
-            Text("STEP")
-                .font(.sectorMono(11, weight: .semibold))
-                .tracking(1.5)
-                .foregroundStyle(Color.sectorText)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.sectorBorder, lineWidth: 1)
-                }
+            controlLabel("STEP")
         }
         .buttonStyle(.plain)
+        .disabled(workspace.isRunning)
         .help("Fetch the next opcode at CS:IP")
+        .accessibilityIdentifier("stepButton")
+    }
+
+    private func controlLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.sectorMono(11, weight: .semibold))
+            .tracking(1.5)
+            .foregroundStyle(Color.sectorText)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.sectorBorder, lineWidth: 1)
+            }
     }
 
     private var display: some View {

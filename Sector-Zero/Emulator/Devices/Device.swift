@@ -3,6 +3,18 @@ import Foundation
 protocol Device: AnyObject {
 }
 
+/// A deterministic device driven from completed CPU/interrupt boundaries.
+/// Devices receive elapsed emulated clocks in batches; they never own threads
+/// or depend on host wall-clock time.
+protocol ClockedDevice: Device {
+    func advance(by clocks: Int)
+    func reset()
+}
+
+extension ClockedDevice {
+    func reset() {}
+}
+
 /// A device exposed through the 8086's independent 16-bit I/O-port space.
 /// Word callbacks are explicit so a 16-bit device can observe one architectural
 /// transfer rather than being forced through two byte callbacks.

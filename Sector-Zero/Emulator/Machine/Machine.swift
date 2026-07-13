@@ -11,6 +11,21 @@ private struct SuspendedRepeat {
     let continuationIP: UInt16
 }
 
+enum MachineRunStopReason: Equatable, Sendable {
+    case instructionLimit
+    case paused
+    case halted
+    case waitingForCoprocessor
+    case fault(CPUFault)
+}
+
+struct MachineRunSlice: Equatable, Sendable {
+    let executedBoundaries: Int
+    let elapsedClocks: UInt64
+    let stopReason: MachineRunStopReason
+    let snapshot: MachineSnapshot
+}
+
 final class Machine {
     let memory: Memory
     let bus: EmulatorBus
@@ -23,6 +38,7 @@ final class Machine {
     private var maskableShadow = 0
     private var stackSegmentShadow = 0
     private var suspendedRepeat: SuspendedRepeat?
+    private var clockedDevices: [any ClockedDevice] = []
 
     init(memory: Memory = Memory()) {
         self.memory = memory
@@ -49,6 +65,14 @@ final class Machine {
         maskableShadow = 0
         stackSegmentShadow = 0
         suspendedRepeat = nil
+        for device in clockedDevices {
+            device.reset()
+        }
+    }
+
+    func attachClockedDevice(_ device: any ClockedDevice) {
+        precondition(!clockedDevices.contains { $0 === device }, "clocked device is already attached")
+        clockedDevices.append(device)
     }
 
     /// Latches a rising-edge request on the 8086 NMI input (fixed vector 2).
@@ -80,11 +104,18 @@ final class Machine {
 
     /// Advances one interrupt or instruction boundary. Normal instructions run
     /// fetch → decode → execute; REP may suspend after a completed iteration.
-    func step() {
+    @discardableResult
+    func step() -> Int {
+        let start = cycleCount
+        stepBoundary()
+        return Int(cycleCount - start)
+    }
+
+    private func stepBoundary() {
         if resumeRepeatedInstructionIfNeeded() { return }
 
         if let interruptClocks = acceptPendingBoundaryInterrupt(returnCS: cpu.cs, returnIP: cpu.ip) {
-            clock.advance(by: interruptClocks)
+            advanceClock(by: interruptClocks)
             return
         }
         guard cpu.resumeAfterCoprocessorWaitIfReady() else { return }
@@ -143,7 +174,7 @@ final class Machine {
                     continuationIP: continuationIP
                 )
                 cpu.clearSegmentOverride()
-                clock.advance(by: cycles)
+                advanceClock(by: cycles)
                 return
             }
         } else {
@@ -154,7 +185,7 @@ final class Machine {
         // Emulator diagnostics stop at the offending instruction boundary;
         // they must not be mistaken for interruptible architectural faults.
         if cpu.fault != nil {
-            clock.advance(by: cycles)
+            advanceClock(by: cycles)
             return
         }
 
@@ -171,16 +202,63 @@ final class Machine {
             returnIP: cpu.ip,
             deferOtherInterrupts: deferOtherInterrupts
         )
-        clock.advance(by: cycles)
+        advanceClock(by: cycles)
     }
 
-    /// Steps repeatedly until the CPU halts or `maxSteps` instructions have
-    /// executed. The bound keeps runaway programs (and tests) from hanging.
-    func run(maxSteps: Int) {
-        for _ in 0..<maxSteps {
-            if cpu.halted && !hasWakeableInterrupt { return }
+    /// Runs a deterministic, instruction-bounded slice and captures one
+    /// immutable snapshot at its end. Cancellation is sampled at every
+    /// instruction/interrupt boundary, independent of host wall-clock time.
+    func runSlice(
+        maxInstructions: Int,
+        shouldPause: () -> Bool = { false }
+    ) -> MachineRunSlice {
+        precondition(maxInstructions >= 0, "run-slice bound cannot be negative")
+        let startClocks = cycleCount
+        var executedBoundaries = 0
+        var stopReason: MachineRunStopReason = .instructionLimit
+
+        while executedBoundaries < maxInstructions {
+            if shouldPause() {
+                stopReason = .paused
+                break
+            }
+            if let fault = cpu.fault {
+                stopReason = .fault(fault)
+                break
+            }
+            if cpu.halted && !hasWakeableInterrupt {
+                stopReason = .halted
+                break
+            }
+            if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt {
+                stopReason = .waitingForCoprocessor
+                break
+            }
             step()
+            executedBoundaries += 1
         }
+
+        if stopReason == .instructionLimit {
+            if let fault = cpu.fault {
+                stopReason = .fault(fault)
+            } else if cpu.halted && !hasWakeableInterrupt {
+                stopReason = .halted
+            } else if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt {
+                stopReason = .waitingForCoprocessor
+            }
+        }
+
+        return MachineRunSlice(
+            executedBoundaries: executedBoundaries,
+            elapsedClocks: cycleCount - startClocks,
+            stopReason: stopReason,
+            snapshot: snapshot()
+        )
+    }
+
+    /// Compatibility wrapper used by instruction tests and simple callers.
+    func run(maxSteps: Int) {
+        _ = runSlice(maxInstructions: maxSteps)
     }
 
     private var hasWakeableInterrupt: Bool {
@@ -196,7 +274,7 @@ final class Machine {
         }
 
         if let interruptClocks = acceptPendingBoundaryInterrupt(returnCS: cpu.cs, returnIP: cpu.ip) {
-            clock.advance(by: interruptClocks)
+            advanceClock(by: interruptClocks)
             return true
         }
         guard !cpu.halted else { return true }
@@ -230,7 +308,7 @@ final class Machine {
                 returnIP: cpu.ip
             )
         }
-        clock.advance(by: cycles)
+        advanceClock(by: cycles)
         return true
     }
 
@@ -315,9 +393,15 @@ final class Machine {
     }
 
     func tick() {
-        // Individual clock cycles will be driven from within `step()` once
-        // instruction timing lands.
-        clock.tick()
+        advanceClock(by: 1)
+    }
+
+    private func advanceClock(by clocks: Int) {
+        guard clocks > 0 else { return }
+        clock.advance(by: clocks)
+        for device in clockedDevices {
+            device.advance(by: clocks)
+        }
     }
 
     /// Captures the machine's observable state as an immutable value for the UI.

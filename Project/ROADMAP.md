@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M39 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M40 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -21,7 +21,8 @@ indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
 CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
 sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
-completion policy). The next milestone is M40 below.
+completion policy; deterministic device scheduling and run/pause slices). The
+next milestone is M41 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -540,7 +541,7 @@ timing, but its memory map, I/O ports, interrupts, BIOS contracts, and disk/vide
 behavior must be compatible enough for unmodified PC DOS applications. Record
 every intentional deviation in a machine-profile document before M41.
 
-### M40 — Deterministic machine scheduler + run/pause
+### M40 — Deterministic machine scheduler + run/pause ✅
 - **Goal:** Turn instruction clock counts into the timebase that drives devices
   without coupling them to the UI.
 - **Build:** `Machine.step()` reports elapsed clocks to clocked devices; add a
@@ -550,6 +551,14 @@ every intentional deviation in a machine-profile document before M41.
 - **Don't:** Promise wall-clock accuracy or add a device thread per peripheral.
 - **Tests:** Deterministic device tick totals, halt/interrupt behavior, run bound,
   pause latency, reset, and snapshot consistency; UI tests for RUN/PAUSE state.
+- **Completed:** `Machine.step()` reports elapsed clocks and routes every clock
+  batch to attached `ClockedDevice`s. `runSlice` is instruction-bounded, samples
+  pause at each boundary, terminates cleanly for HLT, WAIT, and faults, and
+  returns one consistent immutable snapshot plus an explicit stop reason. The
+  workspace runs 2,048-instruction slices on a dedicated execution queue,
+  publishes one snapshot per slice on the main actor, and exposes responsive
+  RUN/PAUSE state while disabling STEP. Scheduler and workspace tests cover
+  device totals, interrupt wakeup, bounds, pause, reset, and UI-facing state.
 
 ### M41 — PC memory map, ROM regions, and firmware loading
 - **Goal:** Replace flat writable RAM with a bus-owned address map suitable for

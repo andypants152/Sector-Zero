@@ -1,6 +1,23 @@
 import Foundation
 import Observation
 
+private final class MachineRunControl: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pauseRequested = false
+
+    func begin() {
+        lock.withLock { pauseRequested = false }
+    }
+
+    func requestPause() {
+        lock.withLock { pauseRequested = true }
+    }
+
+    func shouldPause() -> Bool {
+        lock.withLock { pauseRequested }
+    }
+}
+
 @MainActor
 @Observable
 final class SectorZeroWorkspace {
@@ -10,10 +27,24 @@ final class SectorZeroWorkspace {
     var currentProject: SectorZeroProject?
     var recentProjects: [RecentProject]
     var errorMessage: String?
-    let machine = Machine()
+    let machine: Machine
     private(set) var machineSnapshot: MachineSnapshot
+    private(set) var isRunning = false
+    private(set) var lastRunStopReason: MachineRunStopReason?
+    private let runControl = MachineRunControl()
+    private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
+    private var activeRunID: UUID?
+    private let sliceInstructionLimit = 2_048
 
     init() {
+        let machine = Machine()
+        self.machine = machine
+        self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey)
+        self.machineSnapshot = machine.snapshot()
+    }
+
+    init(machine: Machine) {
+        self.machine = machine
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey)
         self.machineSnapshot = machine.snapshot()
     }
@@ -21,8 +52,70 @@ final class SectorZeroWorkspace {
     /// Advances the emulated machine by one instruction step and republishes the
     /// resulting state so observing views refresh.
     func step() {
+        guard !isRunning else { return }
         machine.step()
         machineSnapshot = machine.snapshot()
+    }
+
+    var runButtonTitle: String {
+        isRunning ? "PAUSE" : "RUN"
+    }
+
+    func toggleRunPause() {
+        isRunning ? pause() : run()
+    }
+
+    /// Starts background execution in deterministic bounded slices. The main
+    /// actor receives exactly one immutable snapshot per completed slice.
+    func run() {
+        guard !isRunning else { return }
+        let runID = UUID()
+        activeRunID = runID
+        isRunning = true
+        lastRunStopReason = nil
+        runControl.begin()
+
+        let machine = machine
+        let control = runControl
+        let sliceLimit = sliceInstructionLimit
+        executionQueue.async { [weak self] in
+            while true {
+                guard self != nil else { return }
+                let result = machine.runSlice(maxInstructions: sliceLimit) {
+                    control.shouldPause()
+                }
+                Task { @MainActor [weak self] in
+                    self?.publish(result, for: runID)
+                }
+                switch result.stopReason {
+                case .instructionLimit: continue
+                default: return
+                }
+            }
+        }
+    }
+
+    /// Requests a pause. The execution queue observes it before the next
+    /// instruction boundary and publishes that slice's final snapshot.
+    func pause() {
+        guard isRunning else { return }
+        runControl.requestPause()
+    }
+
+    func resetMachine() {
+        guard !isRunning else { return }
+        machine.reset()
+        lastRunStopReason = nil
+        machineSnapshot = machine.snapshot()
+    }
+
+    private func publish(_ result: MachineRunSlice, for runID: UUID) {
+        guard activeRunID == runID else { return }
+        machineSnapshot = result.snapshot
+        guard result.stopReason != .instructionLimit else { return }
+        lastRunStopReason = result.stopReason
+        isRunning = false
+        activeRunID = nil
     }
 
     var windowTitle: String {
