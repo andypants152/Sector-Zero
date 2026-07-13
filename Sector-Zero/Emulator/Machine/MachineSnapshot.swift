@@ -12,4 +12,5 @@ struct MachineSnapshot: Equatable, Sendable {
     let loadedSystemROMByteCount: Int
     let lastMemoryMapError: MemoryMapError?
     let rejectedROMWriteCount: Int
+    let interruptController: ProgrammableInterruptControllerSnapshot
 }

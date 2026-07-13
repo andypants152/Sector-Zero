@@ -57,8 +57,13 @@ final class Machine {
         AddressTranslator.physicalAddress(segment: cpu.cs, offset: cpu.ip)
     }
 
+    var interruptController: ProgrammableInterruptController {
+        bus.interruptController
+    }
+
     func reset() {
         bus.resetMemoryMapDiagnostics()
+        interruptController.reset()
         cpu.reset()
         clock.reset()
         pendingNMI = false
@@ -112,6 +117,14 @@ final class Machine {
 
     func clearMaskableInterrupt() {
         clearINTR()
+    }
+
+    func raiseIRQ(_ line: IRQLine) {
+        bus.raiseIRQ(line)
+    }
+
+    func lowerIRQ(_ line: IRQLine) {
+        bus.lowerIRQ(line)
     }
 
     /// Advances one interrupt or instruction boundary. Normal instructions run
@@ -282,7 +295,8 @@ final class Machine {
     private var hasWakeableInterrupt: Bool {
         guard stackSegmentShadow == 0 else { return false }
         if pendingNMI { return true }
-        return maskableShadow == 0 && pendingINTRVector != nil && cpu.flags[.interruptEnable]
+        let hasMaskableRequest = pendingINTRVector != nil || interruptController.hasPendingInterrupt
+        return maskableShadow == 0 && hasMaskableRequest && cpu.flags[.interruptEnable]
     }
 
     private func resumeRepeatedInstructionIfNeeded() -> Bool {
@@ -396,11 +410,16 @@ final class Machine {
             return 50
         }
         if maskableShadow == 0,
-           let vector = pendingINTRVector,
            cpu.flags[.interruptEnable] {
-            pendingINTRVector = nil
-            cpu.acceptInterrupt(type: vector, returnCS: returnCS, returnIP: returnIP)
-            return 61
+            if let vector = pendingINTRVector {
+                pendingINTRVector = nil
+                cpu.acceptInterrupt(type: vector, returnCS: returnCS, returnIP: returnIP)
+                return 61
+            }
+            if let vector = interruptController.acknowledge() {
+                cpu.acceptInterrupt(type: vector, returnCS: returnCS, returnIP: returnIP)
+                return 61
+            }
         }
         if pendingTrap {
             pendingTrap = false
@@ -431,7 +450,8 @@ final class Machine {
             memoryRegions: bus.memoryMapSnapshot,
             loadedSystemROMByteCount: bus.loadedSystemROMByteCount,
             lastMemoryMapError: bus.lastMemoryMapError,
-            rejectedROMWriteCount: bus.rejectedROMWriteCount
+            rejectedROMWriteCount: bus.rejectedROMWriteCount,
+            interruptController: interruptController.snapshot
         )
     }
 }

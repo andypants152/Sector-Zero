@@ -23,6 +23,7 @@ private final class MachineRunControl: @unchecked Sendable {
 final class SectorZeroWorkspace {
     private let recentProjectsKey = "SectorZero.RecentProjects"
     private let maximumRecentProjects = 8
+    private let userDefaults: UserDefaults
 
     var currentProject: SectorZeroProject?
     var recentProjects: [RecentProject]
@@ -36,16 +37,18 @@ final class SectorZeroWorkspace {
     private var activeRunID: UUID?
     private let sliceInstructionLimit = 2_048
 
-    init() {
+    init(userDefaults: UserDefaults = .standard) {
         let machine = Machine()
         self.machine = machine
-        self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey)
+        self.userDefaults = userDefaults
+        self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
     }
 
-    init(machine: Machine) {
+    init(machine: Machine, userDefaults: UserDefaults = .standard) {
         self.machine = machine
-        self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey)
+        self.userDefaults = userDefaults
+        self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
     }
 
@@ -226,16 +229,25 @@ final class SectorZeroWorkspace {
             return
         }
 
-        UserDefaults.standard.set(data, forKey: recentProjectsKey)
+        userDefaults.set(data, forKey: recentProjectsKey)
     }
 
-    private static func loadRecentProjects(key: String) -> [RecentProject] {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    private static func loadRecentProjects(key: String, from userDefaults: UserDefaults) -> [RecentProject] {
+        guard let data = userDefaults.data(forKey: key),
               let projects = try? decoder.decode([RecentProject].self, from: data) else {
             return []
         }
 
-        return projects
+        let existingProjects = projects.filter { project in
+            let metadataURL = project.projectURL
+                .appendingPathComponent(SectorZeroProjectStore.metadataFileName, isDirectory: false)
+            return FileManager.default.fileExists(atPath: metadataURL.path)
+        }
+        if existingProjects.count != projects.count,
+           let data = try? encoder.encode(existingProjects) {
+            userDefaults.set(data, forKey: key)
+        }
+        return existingProjects
     }
 
     private static let encoder: JSONEncoder = {

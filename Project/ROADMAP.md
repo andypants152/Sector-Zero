@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M41 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M42 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -22,8 +22,9 @@ MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
 CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
 sign extension and XLAT; port I/O and IN/OUT; LOCK/WAIT/ESC and opcode-table
 completion policy; deterministic device scheduling and run/pause slices; PC
-physical memory map, protected system ROM, and project firmware loading). The
-next milestone is M42 below.
+physical memory map, protected system ROM, and project firmware loading; master
+8259A interrupt routing, masking, priority, and EOI). The next milestone is M43
+below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -585,7 +586,7 @@ every intentional deviation in a machine-profile document before M41.
 - **Compatibility watch:** Real PCs ignore ROM writes; if firmware or DOS-era
   memory probes hit this diagnostic, demote it from a run stop to passive state.
 
-### M42 — 8259A-compatible programmable interrupt controller
+### M42 — 8259A-compatible programmable interrupt controller ✅
 - **Goal:** Multiplex hardware IRQs onto the CPU's INTR input.
 - **Build:** Model the master PIC's initialization words, mask register, request/
   in-service state, priority, acknowledge/vector delivery, and EOI through its
@@ -593,6 +594,17 @@ every intentional deviation in a machine-profile document before M41.
 - **Don't:** Add a cascaded second PIC until software requires IRQ8–15.
 - **Tests:** Initialization, masks, fixed priority, simultaneous IRQs, EOI,
   level transitions, IF interaction, and HLT wake.
+- **Completed:** The bus installs a master PIC at ports 20h/21h with ICW1–4
+  initialization, OCW1 masking, OCW2 specific/non-specific EOI, and OCW3 IRR/
+  ISR selection. It tracks eight named IRQ lines, fixed IRQ0-first priority,
+  request and in-service registers, higher-priority preemption, edge-triggered
+  transitions by default, optional level-triggered reassertion, and auto-EOI.
+  `Machine` acknowledges PIC vectors only when IF and interrupt shadows allow,
+  wakes HLT for deliverable requests, resets PIC state with the machine, and
+  publishes controller state in `MachineSnapshot`. The direct-vector INTR hook
+  remains available for CPU-focused tests and specialist callers. Focused tests
+  cover initialization and ports, masks, simultaneous priority, ISR blocking,
+  EOI, edge/level transitions, IF gating, snapshots, and HLT wake.
 
 ### M43 — 8253-compatible timer and channel-2 speaker gate
 - **Goal:** Provide BIOS timekeeping and the periodic IRQ0 source.

@@ -81,6 +81,7 @@ final class EmulatorBus: Bus {
     static let systemROMRange: ClosedRange<UInt32> = 0xF0000...0xFFFFF
 
     private let memory: Memory
+    let interruptController = ProgrammableInterruptController()
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
     /// adapters are page-aligned in normal operation, making the hot path one
@@ -105,6 +106,7 @@ final class EmulatorBus: Bus {
             try! mapReserved(Self.adapterRange, name: "Adapter Space")
             try! mapROM(Self.systemROMRange, image: [], name: "System ROM")
         }
+        mapPortDevice(interruptController, to: ProgrammableInterruptController.commandPort...ProgrammableInterruptController.dataPort)
     }
 
     func readByte(at address: UInt32) -> UInt8 {
@@ -236,6 +238,14 @@ final class EmulatorBus: Bus {
         for port in ports {
             ioDevices[port] = device
         }
+    }
+
+    func raiseIRQ(_ line: IRQLine) {
+        interruptController.raise(line)
+    }
+
+    func lowerIRQ(_ line: IRQLine) {
+        interruptController.lower(line)
     }
 
     func readIOByte(at port: UInt16) -> UInt8 {

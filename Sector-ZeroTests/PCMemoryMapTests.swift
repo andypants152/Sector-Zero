@@ -146,6 +146,9 @@ struct PCMemoryMapTests {
 struct ProjectFirmwareTests {
     @Test("Opening a project loads its configured firmware and republishes the snapshot")
     func projectFirmware() throws {
+        let defaultsSuite = "SectorZeroTests.ProjectFirmware.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer { userDefaults.removePersistentDomain(forName: defaultsSuite) }
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SectorZeroFirmwareTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -157,11 +160,39 @@ struct ProjectFirmwareTests {
         project.metadata.firmwarePath = "firmware/bios.bin"
         try SectorZeroProjectStore.save(project)
 
-        let workspace = SectorZeroWorkspace()
+        let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
         #expect(workspace.openProject(at: project.projectURL))
         #expect(workspace.currentProject?.projectName == "Firmware")
         #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 16)
         #expect(workspace.machine.bus.readByte(at: 0xFFFF0) == 0xF4)
+    }
+
+    @Test("Missing recent machine packages are pruned from persistent state")
+    func staleRecentProjectsArePruned() throws {
+        let defaultsSuite = "SectorZeroTests.StaleRecentProjects.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer { userDefaults.removePersistentDomain(forName: defaultsSuite) }
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Missing-\(UUID().uuidString).szm", isDirectory: true)
+        let recent = RecentProject(
+            projectName: "Firmware",
+            projectURL: missingURL,
+            lastOpenedDate: Date()
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        userDefaults.set(
+            try encoder.encode([recent]),
+            forKey: "SectorZero.RecentProjects"
+        )
+
+        let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
+
+        #expect(workspace.recentProjects.isEmpty)
+        let persistedData = try #require(userDefaults.data(forKey: "SectorZero.RecentProjects"))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        #expect(try decoder.decode([RecentProject].self, from: persistedData).isEmpty)
     }
 
 
