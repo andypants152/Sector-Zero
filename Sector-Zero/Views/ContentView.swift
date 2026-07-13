@@ -8,8 +8,11 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var workspace = SectorZeroWorkspace()
+
     var body: some View {
-        SectorZeroWorkspaceView()
+        SectorZeroWorkspaceView(workspace: workspace)
+            .navigationTitle(workspace.windowTitle)
     }
 }
 

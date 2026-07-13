@@ -8,6 +8,9 @@
 
 /* Begin PBXFileReference section */
 		985A774C3004587E006B2622 /* Sector-Zero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Sector-Zero.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		985A777E30045DE8006B2622 /* SectorZeroProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroProject.swift; sourceTree = "<group>"; };
+		985A777F30045E00006B2622 /* SectorZeroProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroProjectStore.swift; sourceTree = "<group>"; };
+		985A778130045E10006B2622 /* SectorZeroWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroWorkspace.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +37,8 @@
 			children = (
 				985A774E3004587E006B2622 /* Sector-Zero */,
 				985A774D3004587E006B2622 /* Products */,
+				985A777D30045DE8006B2622 /* Project */,
+				985A778030045E10006B2622 /* Workspace */,
 			);
 			sourceTree = "<group>";
 		};
@@ -43,6 +48,23 @@
 				985A774C3004587E006B2622 /* Sector-Zero.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		985A777D30045DE8006B2622 /* Project */ = {
+			isa = PBXGroup;
+			children = (
+				985A777E30045DE8006B2622 /* SectorZeroProject.swift */,
+				985A777F30045E00006B2622 /* SectorZeroProjectStore.swift */,
+			);
+			path = Project;
+			sourceTree = "<group>";
+		};
+		985A778030045E10006B2622 /* Workspace */ = {
+			isa = PBXGroup;
+			children = (
+				985A778130045E10006B2622 /* SectorZeroWorkspace.swift */,
+			);
+			path = Workspace;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

@@ -46,9 +46,10 @@ private extension MetalViewRepresentable {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
         view.autoResizeDrawable = true
 
-        let demoScene = context.coordinator.demoScene
-        let renderer = CRTRenderer(metalView: view) { frameBuffer, time in
-            demoScene.render(into: frameBuffer, time: time)
+        let bootScene = context.coordinator.bootScene
+        let frameBuffer = FrameBuffer(width: bootScene.console.pixelWidth, height: bootScene.console.pixelHeight)
+        let renderer = CRTRenderer(metalView: view, frameBuffer: frameBuffer) { frameBuffer, time in
+            bootScene.render(into: frameBuffer, time: time)
         }
         context.coordinator.renderer = renderer
         view.delegate = renderer
@@ -58,6 +59,6 @@ private extension MetalViewRepresentable {
 }
 
 private final class Coordinator {
-    let demoScene = FrameBufferDemoScene()
+    let bootScene = ConsoleBootScene()
     var renderer: CRTRenderer?
 }

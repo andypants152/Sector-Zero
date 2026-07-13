@@ -8,29 +8,60 @@
 import SwiftUI
 
 struct SectorZeroWorkspaceView: View {
+    @Bindable var workspace: SectorZeroWorkspace
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     var body: some View {
+        Group {
+            if isCompact {
+                compactLayout
+            } else {
+                regularLayout
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.sectorWorkspace)
+        .alert("Project Error", isPresented: errorBinding) {
+            Button("OK") {
+                workspace.errorMessage = nil
+            }
+        } message: {
+            Text(workspace.errorMessage ?? "An unknown project error occurred.")
+        }
+    }
+
+    private var regularLayout: some View {
+        HStack(spacing: 0) {
+            ProjectBrowserView(workspace: workspace)
+            Divider()
+                .overlay(Color.sectorScreenBorder)
+            workspaceContent
+        }
+    }
+
+    private var compactLayout: some View {
+        VStack(spacing: 0) {
+            ProjectBrowserView(workspace: workspace, isCompact: true)
+            Divider()
+                .overlay(Color.sectorScreenBorder)
+            workspaceContent
+        }
+    }
+
+    private var workspaceContent: some View {
         VStack(spacing: 16) {
             header
-            CRTMetalView()
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.sectorScreenBorder, lineWidth: 1)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .aspectRatio(4.0 / 3.0, contentMode: .fit)
-                .layoutPriority(1)
+            emulatorContent
             footer
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.sectorWorkspace)
     }
 
     private var header: some View {
         HStack {
-            Text("SECTOR ZERO")
+            Text(workspace.currentProject?.projectName.uppercased() ?? "SECTOR ZERO")
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .tracking(2)
                 .foregroundStyle(Color.sectorText)
@@ -38,14 +69,56 @@ struct SectorZeroWorkspaceView: View {
         }
     }
 
+    private var display: some View {
+        CRTMetalView()
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.sectorScreenBorder, lineWidth: 1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aspectRatio(4.0 / 3.0, contentMode: .fit)
+            .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private var emulatorContent: some View {
+        if isCompact {
+            VStack(spacing: 14) {
+                display
+                CPUInspectorView(cpu: workspace.cpu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            HStack(alignment: .top, spacing: 16) {
+                display
+                CPUInspectorView(cpu: workspace.cpu)
+            }
+        }
+    }
+
     private var footer: some View {
         HStack {
-            Text("DISPLAY OFFLINE")
+            Text(workspace.statusText)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(Color.sectorMutedText)
             Spacer(minLength: 0)
         }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding {
+            workspace.errorMessage != nil
+        } set: { isPresented in
+            if !isPresented {
+                workspace.errorMessage = nil
+            }
+        }
+    }
+
+    private var isCompact: Bool {
+        horizontalSizeClass == .compact
     }
 }
 
@@ -57,5 +130,5 @@ private extension Color {
 }
 
 #Preview {
-    SectorZeroWorkspaceView()
+    SectorZeroWorkspaceView(workspace: SectorZeroWorkspace())
 }
