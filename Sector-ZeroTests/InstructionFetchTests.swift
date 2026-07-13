@@ -85,7 +85,9 @@ struct InstructionFetchTests {
 
     @Test("Snapshot reflects the advanced code pointer after a fetch")
     func snapshotReflectsAdvancedPointer() {
-        let machine = Machine()
+        // A NOP, so the step consumes exactly one byte (0x00 would decode as
+        // a two-byte ADD).
+        let machine = machineWithOpcodes([0x90])
         machine.step()
         let snapshot = machine.snapshot()
         // CS stays FFFF, IP advanced to 0001 → physical FFFF1h.

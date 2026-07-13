@@ -15,5 +15,15 @@ enum Instruction: Equatable {
     case movRegisterToRM16(source: Register16, destination: ModRMOperand, eaClocks: Int)
     case movRMToRegister8(destination: Register8, source: ModRMOperand, eaClocks: Int)
     case movRMToRegister16(destination: Register16, source: ModRMOperand, eaClocks: Int)
+    case aluRegisterToRM8(op: ALUBinaryOp, source: Register8, destination: ModRMOperand, eaClocks: Int)
+    case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
+    case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)
+    case aluRMToRegister16(op: ALUBinaryOp, destination: Register16, source: ModRMOperand, eaClocks: Int)
     case unknown(UInt8)
+}
+
+/// A binary ALU operation decoded from an r/m↔reg opcode block. SUB and CMP
+/// join in milestone 11.
+enum ALUBinaryOp: Equatable, Sendable {
+    case add
 }

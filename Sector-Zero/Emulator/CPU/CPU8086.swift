@@ -131,6 +131,27 @@ final class CPU8086 {
                 registers[destination] = readMemoryWord(at: address)
                 return 8 + eaClocks
             }
+        case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
+            // ALU r/m8, r8 — destination is read-modify-write when memory.
+            let (result, arithmeticFlags) = perform8(op, readOperand8(destination), registers[source])
+            writeOperand8(result, to: destination)
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 3 : 16 + eaClocks
+        case .aluRegisterToRM16(let op, let source, let destination, let eaClocks):
+            let (result, arithmeticFlags) = perform16(op, readOperand16(destination), registers[source])
+            writeOperand16(result, to: destination)
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 3 : 16 + eaClocks
+        case .aluRMToRegister8(let op, let destination, let source, let eaClocks):
+            let (result, arithmeticFlags) = perform8(op, registers[destination], readOperand8(source))
+            registers[destination] = result
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(source) ? 3 : 9 + eaClocks
+        case .aluRMToRegister16(let op, let destination, let source, let eaClocks):
+            let (result, arithmeticFlags) = perform16(op, registers[destination], readOperand16(source))
+            registers[destination] = result
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(source) ? 3 : 9 + eaClocks
         case .unknown:
             return 3
         }
@@ -144,6 +165,51 @@ final class CPU8086 {
         case .cs: cs = value
         case .ss: ss = value
         case .ds: ds = value
+        }
+    }
+
+    private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {
+        switch op {
+        case .add: return ALU.add8(a, b)
+        }
+    }
+
+    private func perform16(_ op: ALUBinaryOp, _ a: UInt16, _ b: UInt16) -> (UInt16, ArithmeticFlags) {
+        switch op {
+        case .add: return ALU.add16(a, b)
+        }
+    }
+
+    private func isRegister(_ operand: ModRMOperand) -> Bool {
+        if case .register = operand { return true }
+        return false
+    }
+
+    private func readOperand8(_ operand: ModRMOperand) -> UInt8 {
+        switch operand {
+        case .register(let encoding): return registers[Register8(rawValue: encoding)!]
+        case .memory(let address): return bus.readByte(at: physicalAddress(of: address))
+        }
+    }
+
+    private func writeOperand8(_ value: UInt8, to operand: ModRMOperand) {
+        switch operand {
+        case .register(let encoding): registers[Register8(rawValue: encoding)!] = value
+        case .memory(let address): bus.writeByte(value, at: physicalAddress(of: address))
+        }
+    }
+
+    private func readOperand16(_ operand: ModRMOperand) -> UInt16 {
+        switch operand {
+        case .register(let encoding): return registers[Register16(rawValue: encoding)!]
+        case .memory(let address): return readMemoryWord(at: address)
+        }
+    }
+
+    private func writeOperand16(_ value: UInt16, to operand: ModRMOperand) {
+        switch operand {
+        case .register(let encoding): registers[Register16(rawValue: encoding)!] = value
+        case .memory(let address): writeMemoryWord(value, at: address)
         }
     }
 

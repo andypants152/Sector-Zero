@@ -13,8 +13,9 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
-(MOV immediate → register), M8 (ModR/M decoding), and M9 (MOV r/m ↔ reg) are
-complete and tested. The next milestones are M10–M14 below.
+(MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), and M10
+(ALU flag engine + ADD) are complete and tested. The next milestones are M11–M14
+below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -141,21 +142,14 @@ mem→reg 8+EA, with the full documented EA-clock table carried on `ModRM`.
 `CPU8086.writeSegment(_:to:)` exists for tests and future `8E`/POP sreg.
 Still out: segment-override prefixes, `8C`/`8E`, `C6`/`C7`.
 
-### M10 — ALU flag engine + ADD (0x00–0x03)
-- **Goal:** Correct CF/PF/AF/ZF/SF/OF computation — the make-or-break machinery
-  for every arithmetic instruction that follows.
-- **Build:** A standalone, pure `ALU` (value semantics) with 8- and 16-bit
-  `add` returning `(result, flags-to-set)`; CPU applies them to `CPUFlags`.
-  Flag rules: CF = carry out; AF = carry out of bit 3; ZF/SF from result;
-  PF = even parity of the **low byte only**; OF = signed overflow
-  (carry-in≠carry-out of the top bit). Then decode/execute `00`–`03`
-  (ADD r/m↔reg, both widths and directions) reusing M9's operand plumbing.
-  Cycles: reg→reg **3**; memory forms per table.
-- **Don't:** ADC; immediate forms (`04`/`05`, `80`–`83`); INC/DEC.
-- **Tests:** exhaustive-ish ALU table tests — known vectors for each flag
-  (0xFF+1 byte: CF AF ZF PF set, OF clear; 0x7F+1: OF SF AF set, CF clear;
-  0x8000+0x8000 word: CF OF ZF…); PF ignores the high byte; end-to-end ADD
-  through registers and memory.
+### M10 — ALU flag engine + ADD (0x00–0x03) ✅
+Pure `ALU.add8/add16` return `(result, ArithmeticFlags)`; the CPU applies them
+via `CPUFlags.applyArithmetic`, leaving TF/IF/DF alone. Flag semantics: CF carry
+out, AF carry out of bit 3, ZF/SF from result, PF even parity of the low byte
+only, OF signed overflow. `00`–`03` decode into generic `.aluRegisterToRM*` /
+`.aluRMToRegister*` cases carrying an `ALUBinaryOp` (just `.add` today — SUB/CMP
+extend the same enum in M11), executed through shared operand read/write
+helpers. Cycles: reg↔reg 3, mem→reg 9+EA, reg→mem 16+EA (read-modify-write).
 
 ### M11 — SUB and CMP (0x28–0x2B, 0x38–0x3B)
 - **Goal:** Subtraction flags plus the first instruction that only sets flags —

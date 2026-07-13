@@ -31,7 +31,7 @@ struct InstructionDecoderTests {
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x00), 0x0F, 0x42, 0x87, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
+        UInt8(0x04), 0x0F, 0x42, 0x87, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
     ])
     func decodesUnknown(opcode: UInt8) {
         #expect(decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader()) == .unknown(opcode))
@@ -39,9 +39,9 @@ struct InstructionDecoderTests {
 
     @Test("Opcodes without operands decode without consuming bytes")
     func decodingConsumesNoOperandBytes() {
-        // 0xB0–0xBF (MOV reg, imm) and 0x88–0x8B (MOV r/m) legitimately pull
-        // immediate / ModR-M bytes.
-        let operandOpcodes: Set<ClosedRange<UInt8>> = [0x88...0x8B, 0xB0...0xBF]
+        // ADD (00–03) and MOV (88–8B) pull ModR/M bytes; MOV imm (B0–BF)
+        // pulls immediates.
+        let operandOpcodes: Set<ClosedRange<UInt8>> = [0x00...0x03, 0x88...0x8B, 0xB0...0xBF]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
             _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())
         }
