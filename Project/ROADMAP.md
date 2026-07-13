@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M44 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M46 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -25,7 +25,9 @@ completion policy; deterministic device scheduling and run/pause slices; PC
 physical memory map, protected system ROM, and project firmware loading; master
 8259A interrupt routing, masking, priority, and EOI; deterministic 8253 timer,
 IRQ0, and channel-2 speaker gate; CGA 80×25 text VRAM, CRTC state, and snapshot-
-driven CRT rendering). The next milestone is M45 below.
+driven CRT rendering; XT keyboard scan-code delivery through the 8255/PIC;
+and 8237A floppy-channel DMA with page wrapping, terminal count, masking, and
+cycle accounting). The next milestone is M47 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -691,7 +693,7 @@ every intentional deviation in a machine-profile document before M41.
   exercising a guest-programmed PIC, one IRQ1 per keystroke, the 60h/61h
   handshake, EOI, and live CGA output while running.
 
-### M46 — 8237-compatible DMA subset
+### M46 — 8237-compatible DMA subset ✅
 - **Goal:** Establish the transfer mechanism required by a PC floppy controller.
 - **Build:** Implement the channel/register subset used for floppy DMA, including
   address/count programming, page register, terminal count, direction, masking,
@@ -700,6 +702,24 @@ every intentional deviation in a machine-profile document before M41.
   protections.
 - **Tests:** Device↔memory transfers, terminal count, 64 KiB boundary behavior,
   mask/request state, reset defaults, and deterministic clock impact.
+- **Completed:** The PC bus now maps an 8237A-compatible controller at ports
+  00h–0Fh and the floppy channel-2 page latch at 81h. Guest low/high byte
+  programming establishes channel 2's base/current address and count; the
+  shared byte pointer, command/status, software request, single/all-channel
+  masks, mode, master clear, and clear-mask registers follow the PC contract.
+  The implemented transfer subset is deliberately limited to channel 2,
+  incrementing single mode without auto-initialization: verify, device→memory,
+  and memory→device each service at most one DREQ byte. Counts use the 8237's
+  N−1 convention, latch terminal count until status is read, and wrap the
+  16-bit address inside a fixed page at 64 KiB. Transfers use ordinary bus
+  reads/writes, retaining reserved/ROM protection diagnostics, and charge four
+  deterministic system clocks through the machine clock so PIT/CGA time advances
+  with stolen DMA cycles. Immutable machine snapshots expose the complete
+  channel-2 state. Tests cover port programming, both data directions, terminal
+  count/status clearing, page-boundary wrap, hardware/software requests,
+  masking/controller disable, unsupported modes, reset/master clear, memory-map
+  protection, and exact clock impact. Channels 0/1/3 and demand/block/cascade,
+  decrement, and auto-initialize modes remain deferred until hardware needs them.
 
 ### M47 — Floppy controller + project disk image
 - **Goal:** Expose the project's disk image as a bootable PC floppy.

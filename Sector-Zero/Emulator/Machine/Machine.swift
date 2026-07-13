@@ -86,6 +86,10 @@ final class Machine {
         bus.interruptController
     }
 
+    var dmaController: DirectMemoryAccessController {
+        bus.dmaController
+    }
+
     var intervalTimer: ProgrammableIntervalTimer {
         bus.intervalTimer
     }
@@ -96,6 +100,7 @@ final class Machine {
 
     func reset() {
         bus.resetMemoryMapDiagnostics()
+        dmaController.reset()
         interruptController.reset()
         cpu.reset()
         clock.reset()
@@ -176,6 +181,19 @@ final class Machine {
 
     func lowerIRQ(_ line: IRQLine) {
         bus.lowerIRQ(line)
+    }
+
+    /// Services one asserted floppy-DMA request and charges the four 8237 bus
+    /// clocks to the machine and every clocked device. Direction comes from the
+    /// guest-programmed channel-2 mode register.
+    @discardableResult
+    func serviceDMAChannel2(
+        deviceRead: () -> UInt8 = { 0xFF },
+        deviceWrite: (UInt8) -> Void = { _ in }
+    ) -> DMAServiceResult {
+        let result = bus.serviceDMAChannel2(deviceRead: deviceRead, deviceWrite: deviceWrite)
+        advanceClock(by: result.clocks)
+        return result
     }
 
     /// Advances one interrupt or instruction boundary. Normal instructions run
@@ -506,6 +524,7 @@ final class Machine {
             loadedSystemROMByteCount: bus.loadedSystemROMByteCount,
             lastMemoryMapError: bus.lastMemoryMapError,
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
+            dmaController: dmaController.snapshot,
             interruptController: interruptController.snapshot,
             intervalTimer: intervalTimer.snapshot,
             peripheralInterface: bus.peripheralInterface.snapshot,

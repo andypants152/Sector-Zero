@@ -90,6 +90,7 @@ final class EmulatorBus: Bus {
     static let systemROMRange: ClosedRange<UInt32> = 0xF0000...0xFFFFF
 
     private let memory: Memory
+    let dmaController = DirectMemoryAccessController()
     let interruptController = ProgrammableInterruptController()
     let intervalTimer: ProgrammableIntervalTimer
     let peripheralInterface: ProgrammablePeripheralInterface
@@ -127,6 +128,8 @@ final class EmulatorBus: Bus {
             try! mapROM(Self.systemROMRange, image: [], name: "System ROM")
         }
         mapPortDevice(interruptController, to: ProgrammableInterruptController.commandPort...ProgrammableInterruptController.dataPort)
+        mapPortDevice(dmaController, to: DirectMemoryAccessController.registerPorts)
+        mapPortDevice(dmaController, to: DirectMemoryAccessController.channel2PagePort...DirectMemoryAccessController.channel2PagePort)
         mapPortDevice(intervalTimer, to: ProgrammableIntervalTimer.channel0Port...ProgrammableIntervalTimer.controlPort)
         mapPortDevice(peripheralInterface, to: ProgrammablePeripheralInterface.portA...ProgrammablePeripheralInterface.controlPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.crtcIndexPort...CGATextModeAdapter.crtcDataPort)
@@ -284,6 +287,18 @@ final class EmulatorBus: Bus {
 
     func lowerIRQ(_ line: IRQLine) {
         interruptController.lower(line)
+    }
+
+    func serviceDMAChannel2(
+        deviceRead: () -> UInt8,
+        deviceWrite: (UInt8) -> Void
+    ) -> DMAServiceResult {
+        dmaController.serviceChannel2(
+            memoryRead: readByte,
+            memoryWrite: { value, address in self.writeByte(value, at: address) },
+            deviceRead: deviceRead,
+            deviceWrite: deviceWrite
+        )
     }
 
     func readIOByte(at port: UInt16) -> UInt8 {
