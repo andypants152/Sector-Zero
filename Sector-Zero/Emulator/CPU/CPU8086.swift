@@ -220,6 +220,32 @@ final class CPU8086 {
         case .complementCarry:
             flags[.carry].toggle()
             return 2
+        case .shiftRotate8(let operation, let destination, let countSource, let eaClocks):
+            let count: UInt8 = countSource == .one ? 1 : registers[.cl]
+            let outcome = ALU.shiftRotate8(
+                readOperand8(destination),
+                operation: operation,
+                count: count,
+                carryIn: flags[.carry]
+            )
+            if count != 0 {
+                writeOperand8(outcome.result, to: destination)
+            }
+            flags.applyShiftRotate(outcome.flags)
+            return shiftRotateClocks(for: destination, countSource: countSource, count: count, eaClocks: eaClocks)
+        case .shiftRotate16(let operation, let destination, let countSource, let eaClocks):
+            let count: UInt8 = countSource == .one ? 1 : registers[.cl]
+            let outcome = ALU.shiftRotate16(
+                readOperand16(destination),
+                operation: operation,
+                count: count,
+                carryIn: flags[.carry]
+            )
+            if count != 0 {
+                writeOperand16(outcome.result, to: destination)
+            }
+            flags.applyShiftRotate(outcome.flags)
+            return shiftRotateClocks(for: destination, countSource: countSource, count: count, eaClocks: eaClocks)
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
             // ALU r/m8, r8 — a memory destination is read-modify-write
             // (16+EA), except CMP which only reads (9+EA).
@@ -386,6 +412,20 @@ final class CPU8086 {
     private func isRegister(_ operand: ModRMOperand) -> Bool {
         if case .register = operand { return true }
         return false
+    }
+
+    private func shiftRotateClocks(
+        for operand: ModRMOperand,
+        countSource: ShiftCount,
+        count: UInt8,
+        eaClocks: Int
+    ) -> Int {
+        switch (isRegister(operand), countSource) {
+        case (true, .one): 2
+        case (false, .one): 15 + eaClocks
+        case (true, .cl): 8 + 4 * Int(count)
+        case (false, .cl): 20 + eaClocks + 4 * Int(count)
+        }
     }
 
     private func readOperand8(_ operand: ModRMOperand) -> UInt8 {

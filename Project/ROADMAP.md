@@ -11,12 +11,12 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M24 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M25 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
-JMP near/far; segment overrides; direct FLAGS access and manipulation). The
-next milestone is M25 below.
+JMP near/far; segment overrides; direct FLAGS access and manipulation;
+shifts and rotates). The next milestone is M26 below.
 
 **Segment overrides:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes 0x26/0x2E/0x36/
@@ -268,7 +268,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
 ---
 
-## Completed (M23–M24)
+## Completed (M23–M25)
 
 ### M23 — Flag manipulation: PUSHF/POPF, LAHF/SAHF, CLC/STC/CMC, CLI/STI, CLD/STD (0x9C/0x9D, 0x9E/0x9F, 0xF5/0xF8/0xF9, 0xFA/0xFB, 0xFC/0xFD) ✅
 - **Goal:** Direct FLAGS access — prerequisite for IRET, context switching,
@@ -298,11 +298,7 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 - **Tests:** 32-bit add/sub composed from two 16-bit ops (the canonical use),
   CF-in of both states per op, AF/OF edge cases, immediate-group parity.
 
----
-
-## Next milestones (M25–M26)
-
-### M25 — Shifts and rotates (0xD0–0xD3)
+### M25 — Shifts and rotates (0xD0–0xD3) ✅
 - **Goal:** The shift/rotate group — heavily used for multiplication by
   powers of two, masking, and bit twiddling.
 - **Build:** ModR/M reg field selects: /0 ROL, /1 ROR, /2 RCL, /3 RCR,
@@ -315,7 +311,12 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 - **Don't:** The 186+ `C0`/`C1` imm8 forms (not on the 8086).
 - **Tests:** each op ×widths for count 1 (incl. OF rules), CL-count loops
   with per-bit cycle cost, CF capture on both ends, rotate-through-carry
-  9/17-bit behavior, memory read-modify-write.
+  9/17-bit behavior, memory read-modify-write. Undefined AF and multibit OF
+  are preserved deterministically.
+
+---
+
+## Next milestone (M26)
 
 ### M26 — Group F6/F7: NOT, NEG, TEST imm, MUL/IMUL/DIV/IDIV
 - **Goal:** The unary group — completes the 8086 arithmetic set.

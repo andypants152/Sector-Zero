@@ -218,6 +218,19 @@ struct InstructionDecoder {
             let value = nextByte()
             guard modRM.reg == 0 else { return .unknown(opcode) }
             return .movImmediateToRM8(destination: modRM.operand, value: value, eaClocks: modRM.eaClocks)
+        case 0xD0...0xD3:
+            // Shift/rotate group: bit 0 selects width; bit 1 selects the
+            // implicit count 1 vs. the full, unmasked CL value. /6 is not a
+            // documented 8086 operation, but its complete ModR/M/displacement
+            // is still consumed before it decodes as unknown.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            guard let operation = ShiftRotateOperation(groupSelector: modRM.reg) else {
+                return .unknown(opcode)
+            }
+            let count: ShiftCount = opcode & 0b10 == 0 ? .one : .cl
+            return opcode & 0b01 == 0
+                ? .shiftRotate8(operation: operation, destination: modRM.operand, count: count, eaClocks: modRM.eaClocks)
+                : .shiftRotate16(operation: operation, destination: modRM.operand, count: count, eaClocks: modRM.eaClocks)
         case 0x8C:
             // MOV r/m16, sreg — the ModR/M reg field selects the segment.
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)

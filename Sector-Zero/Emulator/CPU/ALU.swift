@@ -11,6 +11,23 @@ struct ArithmeticFlags: Equatable, Sendable {
     let overflow: Bool
 }
 
+/// Shift/rotate flags are optional because count zero changes no flags,
+/// rotates do not touch SF/ZF/PF, and OF is undefined for multibit operations.
+/// AF is deliberately absent and therefore preserved by the CPU.
+struct ShiftRotateFlags: Equatable, Sendable {
+    let carry: Bool?
+    let parity: Bool?
+    let zero: Bool?
+    let sign: Bool?
+    let overflow: Bool?
+}
+
+struct ShiftRotateResult<Value>: Equatable, Sendable
+where Value: FixedWidthInteger & UnsignedInteger & Sendable {
+    let result: Value
+    let flags: ShiftRotateFlags
+}
+
 /// Pure 8086 arithmetic with authentic flag semantics. Flag rules:
 /// CF = carry out of the top bit; AF = carry out of bit 3; ZF/SF from the
 /// result; PF = even parity of the low byte only (both widths); OF = signed
@@ -111,6 +128,24 @@ enum ALU {
         return (result, flags)
     }
 
+    static func shiftRotate8(
+        _ value: UInt8,
+        operation: ShiftRotateOperation,
+        count: UInt8,
+        carryIn: Bool
+    ) -> ShiftRotateResult<UInt8> {
+        shiftRotate(value, operation: operation, count: count, carryIn: carryIn)
+    }
+
+    static func shiftRotate16(
+        _ value: UInt16,
+        operation: ShiftRotateOperation,
+        count: UInt8,
+        carryIn: Bool
+    ) -> ShiftRotateResult<UInt16> {
+        shiftRotate(value, operation: operation, count: count, carryIn: carryIn)
+    }
+
     static func and8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
         let result = a & b
         return (result, logicalFlags8(result))
@@ -165,6 +200,72 @@ enum ALU {
         )
     }
 
+    /// The original 8086 does not mask CL, so this deliberately performs every
+    /// requested one-bit iteration (up to 255). Undefined AF and multibit OF are
+    /// preserved by returning no replacement value for those flags.
+    private static func shiftRotate<Value>(
+        _ value: Value,
+        operation: ShiftRotateOperation,
+        count: UInt8,
+        carryIn: Bool
+    ) -> ShiftRotateResult<Value>
+    where Value: FixedWidthInteger & UnsignedInteger & Sendable {
+        guard count != 0 else {
+            return ShiftRotateResult(
+                result: value,
+                flags: ShiftRotateFlags(carry: nil, parity: nil, zero: nil, sign: nil, overflow: nil)
+            )
+        }
+
+        let highBit: Value = Value(1) << (Value.bitWidth - 1)
+        let originalSign = value & highBit != 0
+        var result = value
+        var carry = carryIn
+
+        for _ in 0..<Int(count) {
+            switch operation {
+            case .rotateLeft:
+                let outgoing = result & highBit != 0
+                result = (result << 1) | (outgoing ? Value(1) : Value(0))
+                carry = outgoing
+            case .rotateRight:
+                let outgoing = result & 1 != 0
+                result = (result >> 1) | (outgoing ? highBit : Value(0))
+                carry = outgoing
+            case .rotateCarryLeft:
+                let outgoing = result & highBit != 0
+                result = (result << 1) | (carry ? Value(1) : Value(0))
+                carry = outgoing
+            case .rotateCarryRight:
+                let outgoing = result & 1 != 0
+                result = (result >> 1) | (carry ? highBit : Value(0))
+                carry = outgoing
+            case .shiftLeft:
+                carry = result & highBit != 0
+                result <<= 1
+            case .shiftRight:
+                carry = result & 1 != 0
+                result >>= 1
+            case .shiftArithmeticRight:
+                carry = result & 1 != 0
+                result = (result >> 1) | (result & highBit)
+            }
+        }
+
+        let updatesStatus = operation.isShift
+        let overflow = count == 1 ? originalSign != (result & highBit != 0) : nil
+        return ShiftRotateResult(
+            result: result,
+            flags: ShiftRotateFlags(
+                carry: carry,
+                parity: updatesStatus ? hasEvenParity(UInt8(truncatingIfNeeded: result)) : nil,
+                zero: updatesStatus ? result == 0 : nil,
+                sign: updatesStatus ? result & highBit != 0 : nil,
+                overflow: overflow
+            )
+        )
+    }
+
     private static func hasEvenParity(_ byte: UInt8) -> Bool {
         byte.nonzeroBitCount.isMultiple(of: 2)
     }
@@ -185,5 +286,13 @@ extension CPUFlags {
         self[.zero] = flags.zero
         self[.sign] = flags.sign
         self[.overflow] = flags.overflow
+    }
+
+    mutating func applyShiftRotate(_ flags: ShiftRotateFlags) {
+        if let carry = flags.carry { self[.carry] = carry }
+        if let parity = flags.parity { self[.parity] = parity }
+        if let zero = flags.zero { self[.zero] = zero }
+        if let sign = flags.sign { self[.sign] = sign }
+        if let overflow = flags.overflow { self[.overflow] = overflow }
     }
 }

@@ -33,6 +33,8 @@ enum Instruction: Equatable {
     case clearFlag(CPUFlag)
     case setFlag(CPUFlag)
     case complementCarry
+    case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
+    case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case aluRegisterToRM8(op: ALUBinaryOp, source: Register8, destination: ModRMOperand, eaClocks: Int)
     case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
     case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)
@@ -52,6 +54,36 @@ enum Instruction: Equatable {
     case loop(condition: LoopCondition, displacement: Int8)
     case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)
+}
+
+/// The seven defined selectors in the 8086 D0–D3 shift/rotate group. Selector
+/// /6 is intentionally absent because it is not a documented 8086 operation.
+enum ShiftRotateOperation: UInt8, Equatable, Sendable {
+    case rotateLeft = 0
+    case rotateRight = 1
+    case rotateCarryLeft = 2
+    case rotateCarryRight = 3
+    case shiftLeft = 4
+    case shiftRight = 5
+    case shiftArithmeticRight = 7
+
+    init?(groupSelector: UInt8) {
+        self.init(rawValue: groupSelector & 0b111)
+    }
+
+    var isShift: Bool {
+        switch self {
+        case .shiftLeft, .shiftRight, .shiftArithmeticRight: true
+        default: false
+        }
+    }
+}
+
+/// D0/D1 encode an implicit count of one; D2/D3 read the full, unmasked CL
+/// value on the original 8086.
+enum ShiftCount: Equatable, Sendable {
+    case one
+    case cl
 }
 
 /// A Jcc condition, from the low nibble of opcodes 0x70–0x7F. The low bit
