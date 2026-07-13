@@ -186,6 +186,39 @@ struct InstructionDecoder {
                     eaClocks: modRM.eaClocks
                 )
             }
+        case 0x86, 0x87:
+            // XCHG r/m ↔ reg: swap the reg operand with r/m; no flags.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            if opcode & 0b01 != 0 {
+                return .exchangeRM16(register: Register16(rawValue: modRM.reg)!, rm: modRM.operand, eaClocks: modRM.eaClocks)
+            }
+            return .exchangeRM8(register: Register8(rawValue: modRM.reg)!, rm: modRM.operand, eaClocks: modRM.eaClocks)
+        case 0x91...0x97:
+            // XCHG AX, reg — one-byte form; 0x90 (XCHG AX,AX) is NOP above.
+            return .exchangeAXWithRegister(Register16(rawValue: opcode & 0b111)!)
+        case 0xA0...0xA3:
+            // MOV AL/AX ↔ direct-address moffs16 (DS-relative). Bit 0 = width,
+            // bit 1 = direction (0 loads the accumulator, 1 stores it).
+            let low = nextByte()
+            let high = nextByte()
+            return .movMemoryOffset(
+                offset: UInt16(high) << 8 | UInt16(low),
+                isWord: opcode & 0b01 != 0,
+                store: opcode & 0b10 != 0
+            )
+        case 0xC6, 0xC7:
+            // MOV r/m, imm — only the ModR/M reg field /0 is defined. Bytes are
+            // consumed before that check so IP stays aligned for other reg values.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            if opcode & 0b01 != 0 {
+                let low = nextByte()
+                let high = nextByte()
+                guard modRM.reg == 0 else { return .unknown(opcode) }
+                return .movImmediateToRM16(destination: modRM.operand, value: UInt16(high) << 8 | UInt16(low), eaClocks: modRM.eaClocks)
+            }
+            let value = nextByte()
+            guard modRM.reg == 0 else { return .unknown(opcode) }
+            return .movImmediateToRM8(destination: modRM.operand, value: value, eaClocks: modRM.eaClocks)
         case 0x90:
             return .nop
         case 0xF4:

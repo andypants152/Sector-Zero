@@ -131,6 +131,40 @@ final class CPU8086 {
                 registers[destination] = readMemoryWord(at: address)
                 return 8 + eaClocks
             }
+        case .movImmediateToRM8(let destination, let value, let eaClocks):
+            // MOV r/m8, imm8 (C6 /0): register 4 clocks, memory 10+EA.
+            writeOperand8(value, to: destination)
+            return isRegister(destination) ? 4 : 10 + eaClocks
+        case .movImmediateToRM16(let destination, let value, let eaClocks):
+            writeOperand16(value, to: destination)
+            return isRegister(destination) ? 4 : 10 + eaClocks
+        case .movMemoryOffset(let offset, let isWord, let store):
+            // MOV AL/AX ↔ [DS:offset] (A0–A3); a flat 10 clocks, no flags.
+            let address = EffectiveAddress(offset: offset, defaultSegment: .ds)
+            switch (store, isWord) {
+            case (false, false): registers[.al] = bus.readByte(at: physicalAddress(of: address))
+            case (false, true):  registers[.ax] = readMemoryWord(at: address)
+            case (true, false):  bus.writeByte(registers[.al], at: physicalAddress(of: address))
+            case (true, true):   writeMemoryWord(registers[.ax], at: address)
+            }
+            return 10
+        case .exchangeRM8(let register, let rm, let eaClocks):
+            // XCHG swaps the two operands; no flags. reg↔reg 4, mem 17+EA.
+            let temp = registers[register]
+            registers[register] = readOperand8(rm)
+            writeOperand8(temp, to: rm)
+            return isRegister(rm) ? 4 : 17 + eaClocks
+        case .exchangeRM16(let register, let rm, let eaClocks):
+            let temp = registers[register]
+            registers[register] = readOperand16(rm)
+            writeOperand16(temp, to: rm)
+            return isRegister(rm) ? 4 : 17 + eaClocks
+        case .exchangeAXWithRegister(let register):
+            // XCHG AX, reg one-byte form: 3 clocks.
+            let temp = registers[.ax]
+            registers[.ax] = registers[register]
+            registers[register] = temp
+            return 3
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
             // ALU r/m8, r8 — a memory destination is read-modify-write
             // (16+EA), except CMP which only reads (9+EA).

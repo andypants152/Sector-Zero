@@ -31,7 +31,7 @@ struct InstructionDecoderTests {
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x60), 0x0F, 0x27, 0x87, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
+        UInt8(0x60), 0x0F, 0x27, 0x62, 0x64, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
     ])
     func decodesUnknown(opcode: UInt8) {
         #expect(decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader()) == .unknown(opcode))
@@ -50,8 +50,8 @@ struct InstructionDecoderTests {
         let operandOpcodes: Set<ClosedRange<UInt8>> = [
             0x00...0x05, 0x08...0x0D, 0x14...0x15, 0x1C...0x1D,
             0x20...0x25, 0x28...0x2D, 0x30...0x35, 0x38...0x3D,
-            0x70...0x7F, 0x80...0x81, 0x83...0x85, 0x88...0x8B,
-            0xA8...0xA9, 0xB0...0xBF, 0xE0...0xE3, 0xE8...0xEB,
+            0x70...0x7F, 0x80...0x81, 0x83...0x8B, 0xA0...0xA3,
+            0xA8...0xA9, 0xB0...0xBF, 0xC6...0xC7, 0xE0...0xE3, 0xE8...0xEB,
         ]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
             _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())
@@ -74,10 +74,10 @@ struct InstructionDecoderTests {
     @Test("Decoding the same byte sequence twice yields the same instruction")
     func decodingIsDeterministic() {
         for opcode in UInt8.min...UInt8.max {
-            // Long enough for the longest decode (0x81 mod=00 r/m=110:
-            // ModR/M + disp16 + imm16 = 5 bytes).
-            var firstStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A]
-            var secondStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A]
+            // Long enough for the longest decode: 0x81 or 0xC7 mod=00 r/m=110
+            // pulls ModR/M + disp16 + imm16 = 5 bytes. One byte of headroom.
+            var firstStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A, 0xBC]
+            var secondStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A, 0xBC]
             let first = decoder.decode(opcode: opcode, registers: RegisterFile()) { firstStream.removeFirst() }
             let second = decoder.decode(opcode: opcode, registers: RegisterFile()) { secondStream.removeFirst() }
             #expect(first == second)

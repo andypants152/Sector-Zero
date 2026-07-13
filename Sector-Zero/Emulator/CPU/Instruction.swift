@@ -15,6 +15,13 @@ enum Instruction: Equatable {
     case movRegisterToRM16(source: Register16, destination: ModRMOperand, eaClocks: Int)
     case movRMToRegister8(destination: Register8, source: ModRMOperand, eaClocks: Int)
     case movRMToRegister16(destination: Register16, source: ModRMOperand, eaClocks: Int)
+    case movImmediateToRM8(destination: ModRMOperand, value: UInt8, eaClocks: Int)
+    case movImmediateToRM16(destination: ModRMOperand, value: UInt16, eaClocks: Int)
+    /// MOV between AL/AX and a direct-address offset (DS-relative), 0xA0–0xA3.
+    case movMemoryOffset(offset: UInt16, isWord: Bool, store: Bool)
+    case exchangeRM8(register: Register8, rm: ModRMOperand, eaClocks: Int)
+    case exchangeRM16(register: Register16, rm: ModRMOperand, eaClocks: Int)
+    case exchangeAXWithRegister(Register16)
     case aluRegisterToRM8(op: ALUBinaryOp, source: Register8, destination: ModRMOperand, eaClocks: Int)
     case aluRegisterToRM16(op: ALUBinaryOp, source: Register16, destination: ModRMOperand, eaClocks: Int)
     case aluRMToRegister8(op: ALUBinaryOp, destination: Register8, source: ModRMOperand, eaClocks: Int)

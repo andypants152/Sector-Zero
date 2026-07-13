@@ -11,10 +11,11 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M20 are complete and tested (reset, fetch, decode, execute loop;
-register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; AND/OR/XOR;
-TEST + accumulator-immediate forms; conditional jumps; PUSH/POP; CALL/RET near;
-INC/DEC; LOOP/JCXZ; JMP near/far). The next milestone is M21 below.
+**Status:** M1–M21 are complete and tested (reset, fetch, decode, execute loop;
+register file; ModR/M; MOV forms incl. r/m,imm and moffs; XCHG; ADD/SUB/CMP
+incl. immediates; AND/OR/XOR; TEST + accumulator-immediate forms; conditional
+jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far). The next
+milestone is M22 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -229,18 +230,17 @@ stays aligned; those decode to `.unknown` until M24. Tested: TEST leaves both
 operands untouched (byte/word/imm), `3C` vs `80 /7` flag parity, every
 implemented accumulator op, cycle counts, and ADC/SBB still-unknown.
 
-### M21 — XCHG + remaining MOV forms (0x86/0x87, 0x91–0x97, 0xA0–0xA3, 0xC6/0xC7)
-- **Goal:** Round out data movement so compiled/assembled code stops hitting
-  unknown opcodes in its inner loops.
-- **Build:** `86`/`87` XCHG r/m↔reg (reg↔reg 4 clocks, mem 17+EA; no flags);
-  `91`–`97` XCHG AX,reg one-byte forms (3 clocks; note `90` = XCHG AX,AX is
-  already NOP). `A0`–`A3` MOV AL/AX ↔ direct-address moffs16 (10 clocks).
-  `C6`/`C7` MOV r/m,imm (reg 4, mem 10+EA; ModR/M reg field must be /0).
-- **Don't:** Segment-register MOVs (M22); LEA/LDS/LES.
-- **Tests:** XCHG swaps without flag changes (both directions, mem and reg),
-  moffs uses DS and little-endian, `C7` to memory with displacement + imm16
-  consumes the full byte stream (the M15 stream-length lesson applies — this
-  becomes the new longest decode at 6 bytes).
+### M21 — XCHG + remaining MOV forms ✅
+`86`/`87` XCHG r/m↔reg (swap via a temp; reg↔reg 4, mem 17+EA, no flags);
+`91`–`97` XCHG AX,reg one-byte forms (3 clocks; `90` stays NOP). `A0`–`A3`
+MOV AL/AX ↔ direct-address moffs, modeled as one `movMemoryOffset` case with
+`isWord`/`store` flags, flat 10 clocks, DS-relative. `C6`/`C7` MOV r/m,imm
+(new `movImmediateToRM8/16`; reg 4, mem 10+EA); bytes are consumed before the
+ModR/M-reg-field-/0 check so non-/0 encodings stay aligned before decoding to
+`.unknown`. `C7` to a direct address is the new longest decode (5 operand
+bytes); the deterministic-decode test stream grew to 6 for headroom. Tested:
+XCHG all forms flag-free, moffs each direction + DS addressing + little-endian,
+MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
 
 ### M22 — Segment registers: MOV sreg, PUSH/POP sreg, override prefixes (0x8C/0x8E, 0x06–0x1F evens, 0x26/0x2E/0x36/0x3E)
 - **Goal:** Real segmented addressing — programs can finally set up their own
