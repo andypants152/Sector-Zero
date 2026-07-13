@@ -15,15 +15,7 @@ struct InstructionDecoder {
         case 0x00...0x03, 0x08...0x0B, 0x20...0x23, 0x28...0x2B, 0x30...0x33, 0x38...0x3B:
             // ALU r/m ↔ reg blocks, same width/direction bit layout as MOV
             // below; bits 5–3 of the opcode name the operation.
-            let op: ALUBinaryOp
-            switch opcode >> 3 {
-            case 0b00000: op = .add
-            case 0b00001: op = .or
-            case 0b00100: op = .and
-            case 0b00101: op = .sub
-            case 0b00110: op = .xor
-            default:      op = .cmp
-            }
+            guard let op = ALUBinaryOp(aluSelector: opcode >> 3) else { return .unknown(opcode) }
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
             let isWord = opcode & 0b01 != 0
             let regIsDestination = opcode & 0b10 != 0
@@ -64,16 +56,7 @@ struct InstructionDecoder {
             // consumed even for the group's unimplemented operations so IP
             // still lands on the next instruction (no-op-and-advance).
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
-            let op: ALUBinaryOp?
-            switch modRM.reg {
-            case 0b000: op = .add
-            case 0b001: op = .or
-            case 0b100: op = .and
-            case 0b101: op = .sub
-            case 0b110: op = .xor
-            case 0b111: op = .cmp
-            default:    op = nil // ADC (/2), SBB (/3) — M24
-            }
+            let op = ALUBinaryOp(aluSelector: modRM.reg) // nil for ADC (/2), SBB (/3) — M24
             if opcode == 0x80 {
                 let immediate = nextByte()
                 guard let op else { return .unknown(opcode) }
@@ -89,6 +72,40 @@ struct InstructionDecoder {
             }
             guard let op else { return .unknown(opcode) }
             return .aluImmediateToRM16(op: op, destination: modRM.operand, immediate: immediate, eaClocks: modRM.eaClocks)
+        case 0x84, 0x85:
+            // TEST r/m, reg — AND that writes nothing (writesResult == false),
+            // so the shared ALU path charges 3 (reg) / 9+EA (mem), no write.
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            if opcode & 0b01 != 0 {
+                return .aluRegisterToRM16(op: .test, source: Register16(rawValue: modRM.reg)!, destination: modRM.operand, eaClocks: modRM.eaClocks)
+            }
+            return .aluRegisterToRM8(op: .test, source: Register8(rawValue: modRM.reg)!, destination: modRM.operand, eaClocks: modRM.eaClocks)
+        case 0xA8:
+            // TEST AL, imm8 — accumulator/register destination (4 clocks).
+            return .aluImmediateToRM8(op: .test, destination: .register(0), immediate: nextByte(), eaClocks: 0)
+        case 0xA9:
+            let low = nextByte()
+            let high = nextByte()
+            return .aluImmediateToRM16(op: .test, destination: .register(0), immediate: UInt16(high) << 8 | UInt16(low), eaClocks: 0)
+        case let accumulator where accumulator & 0b11000110 == 0b00000100:
+            // Accumulator-immediate ALU shortcuts: <op> AL,imm8 / <op> AX,imm16,
+            // op in bits 5–3. AL/AX (encoding 0) is the destination, so the
+            // immediate-ALU execution charges the 4-clock register path. The
+            // immediate is consumed even for the unimplemented ADC/SBB so IP
+            // stays aligned (as with the 80/81/83 group).
+            let isWord = accumulator & 0b01 != 0
+            let immediate: UInt16
+            if isWord {
+                let low = nextByte()
+                let high = nextByte()
+                immediate = UInt16(high) << 8 | UInt16(low)
+            } else {
+                immediate = UInt16(nextByte())
+            }
+            guard let op = ALUBinaryOp(aluSelector: accumulator >> 3) else { return .unknown(accumulator) }
+            return isWord
+                ? .aluImmediateToRM16(op: op, destination: .register(0), immediate: immediate, eaClocks: 0)
+                : .aluImmediateToRM8(op: op, destination: .register(0), immediate: UInt8(truncatingIfNeeded: immediate), eaClocks: 0)
         case 0x40...0x47:
             return .incRegister16(Register16(rawValue: opcode & 0b111)!)
         case 0x48...0x4F:

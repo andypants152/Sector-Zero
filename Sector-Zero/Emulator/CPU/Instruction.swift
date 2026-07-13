@@ -104,10 +104,27 @@ enum ALUBinaryOp: Equatable, Sendable {
     case and
     case or
     case xor
+    case test
 
-    /// Whether the operation writes its result back to the destination.
-    /// Only CMP discards its result (TEST, added later, shares this trait).
+    /// Whether the operation writes its result back to the destination. CMP
+    /// and TEST only set flags — they are SUB and AND with the write suppressed.
     var writesResult: Bool {
-        self != .cmp
+        self != .cmp && self != .test
+    }
+
+    /// Maps the 3-bit operation selector shared by the ALU opcode encodings:
+    /// bits 5–3 of the r/m↔reg and accumulator-immediate opcodes, and the
+    /// ModR/M reg field of the 80/81/83 immediate group. ADC (/2) and SBB (/3)
+    /// are not implemented until M24; TEST has its own opcodes, not a selector.
+    init?(aluSelector selector: UInt8) {
+        switch selector & 0b111 {
+        case 0b000: self = .add
+        case 0b001: self = .or
+        case 0b100: self = .and
+        case 0b101: self = .sub
+        case 0b110: self = .xor
+        case 0b111: self = .cmp
+        default: return nil // 0b010 ADC, 0b011 SBB
+        }
     }
 }

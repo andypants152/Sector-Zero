@@ -11,10 +11,10 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M19 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M20 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; AND/OR/XOR;
-conditional jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far).
-The next milestone is M20 below.
+TEST + accumulator-immediate forms; conditional jumps; PUSH/POP; CALL/RET near;
+INC/DEC; LOOP/JCXZ; JMP near/far). The next milestone is M21 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -214,18 +214,20 @@ immediate-group parity with register forms, and a memory destination.
 Note: the opcode-formatting fetch test moved off `step()` onto a bare
 `fetch()` now that low opcodes like `0A` pull operands.
 
-### M20 — TEST + accumulator-immediate shortcuts (0x84/0x85, 0xA8/0xA9, 0x04/0x05, 0x0C/0x0D, 0x24/0x25, 0x2C/0x2D, 0x34/0x35, 0x3C/0x3D)
-- **Goal:** TEST (AND that only sets flags) and the one-byte-shorter
-  accumulator-immediate forms real assemblers emit constantly.
-- **Build:** `84`/`85` TEST r/m,reg (computes AND, `writesResult == false`,
-  9 clocks reg / 10+EA mem — verify). `A8`/`A9` TEST AL/AX,imm (4 clocks).
-  The `04`–`3D` accumulator forms decode straight to the existing ALU cases
-  with AL/AX as destination and an immediate source (4 clocks) — pure decoder
-  work, no new execution paths.
-- **Don't:** TEST in the `F6`/`F7` group (M25).
-- **Tests:** TEST leaves both operands untouched, flag parity between `3C`
-  (CMP AL,imm) and the `80 /7` long form, every accumulator opcode decodes to
-  the right op/width, cycle counts.
+### M20 — TEST + accumulator-immediate shortcuts ✅
+`ALUBinaryOp` gains `.test` (AND with `writesResult == false`) and a shared
+`init?(aluSelector:)` that maps the 3-bit op selector — now the single source
+of truth for all three ALU decode sites (r/m↔reg blocks, the 80/81/83 group,
+and the accumulator forms). `84`/`85` TEST r/m,reg reuse the ALU
+register-to-r/m path (3 reg / **9+EA** mem — the roadmap's earlier "9/10+EA"
+note was wrong; verified against the timing table). `A8`/`A9` TEST AL/AX,imm
+and the `04`–`3D` accumulator forms decode to `aluImmediateToRM8/16` with
+`.register(0)` as destination (4 clocks) — pure decoder work, no new
+execution. The accumulator mask case (`opcode & 0xC6 == 0x04`) consumes its
+immediate even for the still-unimplemented ADC/SBB (`14/15`, `1C/1D`) so IP
+stays aligned; those decode to `.unknown` until M24. Tested: TEST leaves both
+operands untouched (byte/word/imm), `3C` vs `80 /7` flag parity, every
+implemented accumulator op, cycle counts, and ADC/SBB still-unknown.
 
 ### M21 — XCHG + remaining MOV forms (0x86/0x87, 0x91–0x97, 0xA0–0xA3, 0xC6/0xC7)
 - **Goal:** Round out data movement so compiled/assembled code stops hitting
