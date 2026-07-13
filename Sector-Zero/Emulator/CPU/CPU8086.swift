@@ -27,15 +27,17 @@ final class CPU8086 {
     /// fetched since reset. Exposed for inspection; not yet decoded or executed.
     private(set) var lastFetchedOpcode: UInt8?
 
-    /// True after executing HLT or raising a temporary pre-interrupt fault.
-    /// A halted CPU performs no fetches; only reset exits the state until
-    /// interrupt delivery and wake-from-halt exist.
+    /// True after executing HLT. A halted CPU performs no fetches until reset
+    /// or an accepted NMI/enabled INTR wakes it through `acceptInterrupt`.
     private(set) var halted = false
 
-    /// A temporary, observable sentinel for CPU-generated faults that cannot
-    /// yet enter an interrupt handler. M35 will replace divide-error halting
-    /// with interrupt-vector-0 delivery.
+    /// Retained in snapshots for compatibility; architectural divide errors
+    /// now enter vector 0 directly and leave this clear.
     private(set) var fault: CPUFault?
+
+    /// Set when DIV/IDIV detects a zero divisor or quotient overflow. Machine
+    /// consumes this at the instruction boundary and enters vector 0.
+    private var divideErrorPending = false
 
     /// A pending segment-override prefix that redirects the next instruction's
     /// data-operand segment. Set by the fetch/decode loop when it consumes a
@@ -67,6 +69,7 @@ final class CPU8086 {
         lastFetchedOpcode = nil
         halted = false
         fault = nil
+        divideErrorPending = false
         segmentOverride = nil
     }
 
@@ -566,13 +569,17 @@ final class CPU8086 {
         }
     }
 
-    /// Executes a repeat-prefixed string instruction as one atomic operation.
-    /// The caller has already charged 2 clocks for the prefix; the 7 clocks
-    /// here complete the documented 9-clock setup. Non-string instructions
-    /// execute once, leaving the prefix with consumption cost only.
-    func executeRepeated(_ instruction: Instruction, prefix: RepeatPrefix) -> Int {
+    /// Executes a repeat-prefixed string instruction until completion or an
+    /// accepted boundary interrupt. The caller charges prefix clocks; the 7
+    /// clocks here complete the documented 9-clock setup. Non-string
+    /// instructions execute once, leaving the prefix with consumption cost.
+    func executeRepeated(
+        _ instruction: Instruction,
+        prefix: RepeatPrefix,
+        interruptAfterIteration: () -> Bool = { false }
+    ) -> RepeatExecutionResult {
         guard let iterationClocks = repeatIterationClocks(for: instruction) else {
-            return execute(instruction)
+            return RepeatExecutionResult(cycles: execute(instruction), interrupted: false)
         }
 
         var cycles = 7
@@ -583,17 +590,44 @@ final class CPU8086 {
             _ = execute(instruction)
             cycles += iterationClocks
 
-            guard isComparingString(instruction) else { continue }
-            let shouldContinue = prefix == .whileEqual
-                ? flags[.zero]
-                : !flags[.zero]
-            if !shouldContinue { break }
+            var shouldContinue = registers[.cx] != 0
+            if isComparingString(instruction) {
+                shouldContinue = shouldContinue && (prefix == .whileEqual
+                    ? flags[.zero]
+                    : !flags[.zero])
+            }
+            guard shouldContinue else { break }
+
+            if interruptAfterIteration() {
+                return RepeatExecutionResult(cycles: cycles, interrupted: true)
+            }
         }
-        return cycles
+        return RepeatExecutionResult(cycles: cycles, interrupted: false)
+    }
+
+    /// Delivers a machine-level interrupt using an explicit restart address.
+    /// External interrupts and traps can wake HLT; the compatibility fault
+    /// field remains clear once architectural delivery begins.
+    func acceptInterrupt(type: UInt8, returnCS: UInt16, returnIP: UInt16) {
+        halted = false
+        fault = nil
+        enterInterrupt(type, returnCS: returnCS, returnIP: returnIP)
+    }
+
+    func takeDivideError() -> Bool {
+        let pending = divideErrorPending
+        divideErrorPending = false
+        return pending
+    }
+
+    /// Restores the post-instruction address after a suspended REP finishes.
+    func setCodeAddress(cs: UInt16, ip: UInt16) {
+        self.cs = cs
+        self.ip = ip
     }
 
     /// Writes a segment register. Used by tests today; MOV sreg (0x8E) and
-    /// POP sreg will route through it when they land.
+    /// POP sreg route through it too.
     func writeSegment(_ value: UInt16, to segment: SegmentRegister) {
         switch segment {
         case .es: es = value
@@ -620,12 +654,12 @@ final class CPU8086 {
     /// Enters a real-mode interrupt through the physical interrupt vector
     /// table at address zero. FLAGS is captured before TF/IF are cleared, then
     /// CS and the already-advanced return IP complete the stack frame.
-    private func enterInterrupt(_ type: UInt8) {
+    private func enterInterrupt(_ type: UInt8, returnCS: UInt16? = nil, returnIP: UInt16? = nil) {
         push16(flags.rawValue)
         flags[.trap] = false
         flags[.interruptEnable] = false
-        push16(cs)
-        push16(ip)
+        push16(returnCS ?? cs)
+        push16(returnIP ?? ip)
 
         let vectorAddress = UInt32(type) * 4
         ip = bus.readWord(at: vectorAddress)
@@ -789,8 +823,8 @@ final class CPU8086 {
     }
 
     private func raiseDivideError() {
-        fault = .divideError
-        halted = true
+        divideErrorPending = true
+        fault = nil
     }
 
     /// MUL/DIV costs are operand-dependent ranges on the 8086. Until the core

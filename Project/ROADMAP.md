@@ -11,22 +11,23 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M34 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M35 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
 JMP near/far; segment overrides; direct FLAGS access and manipulation;
 shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
-MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET). The
-next milestone is M35 below.
+MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
+CPU-generated, NMI, and maskable interrupt delivery). The next milestone is M36 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment and
 repeat prefixes in one loop (2 clocks each; last of each kind wins), then
-decodes+executes+clears — one atomic step, no snapshot sees the override set.
-REP execution is centralized in `CPU8086.executeRepeated`, ready for an
-interrupt boundary between iterations in M35. **All
+decodes+executes+clears. REP execution is centralized in
+`CPU8086.executeRepeated`; `Machine` preserves a suspended repeat context when
+an interrupt is accepted between iterations and resumes it after IRET without
+redoing completed work. **All
 memory-operand access must route through `resolved(_:)`** (the operand
 read/write helpers and moffs do; stack/code accesses deliberately don't). New
 memory-touching instructions (string ops, PUSH/POP m16) must honor it too.
@@ -38,8 +39,8 @@ republishes the snapshot. Keep the emulator core free of any UI/observation conc
 
 **Current CPU surface (`CPU8086`):** registers live in a `RegisterFile` value type
 (word or byte-half access; `private(set)` computed views AX/BX/CX/DX, SI/DI, SP/BP),
-plus CS/DS/ES/SS, IP, `flags: CPUFlags` (reset `0xF002`), `halted`,
-`fault: CPUFault?`, `lastFetchedOpcode: UInt8?`. Key methods:
+plus CS/DS/ES/SS, IP, `flags: CPUFlags` (reset `0xF002`), `halted`, and
+`lastFetchedOpcode: UInt8?`. Key methods:
 
 - `reset()` — documented 8086 reset state (CS:IP = FFFF:0000 → physical FFFF0h;
   DS/ES/SS/IP cleared; FLAGS = `0xF002`; GP registers zeroed; halt/fault cleared).
@@ -49,16 +50,16 @@ plus CS/DS/ES/SS, IP, `flags: CPUFlags` (reset `0xF002`), `halted`,
 - `writeSegment(_:to:)` — segment-register writes (tests and future `8E`/POP sreg).
 - `dumpState()` — returns a `CPUStateSnapshot`.
 
-`Machine.step()` runs fetch → decode → execute and charges cycles via
-`ExecutionClock`; it is a no-op while halted. `Machine.run(maxSteps:)` steps until
+`Machine.step()` first arbitrates pending interrupts, then runs fetch → decode →
+execute and charges cycles via `ExecutionClock`; while halted it accepts only a
+wakeable NMI or enabled INTR. `Machine.run(maxSteps:)` steps until a non-wakeable
 halt or the bound. `Machine.snapshot()` bundles CPU state + cycle count + physical
 code address. Physical addressing lives in
 `AddressTranslator.physicalAddress(segment:offset:)`. Decoding is pure
 (`InstructionDecoder` + `ModRMDecoder`, pulling operand bytes through a `nextByte`
 closure); arithmetic is pure (`ALU` returning `(result, ArithmeticFlags)`).
-Software interrupt instructions share `CPU8086.enterInterrupt`, which builds the
-real-mode FLAGS/CS/IP frame and reads CS:IP from the physical IVT; M35 can reuse
-that path for CPU-generated and external events.
+Software and machine-level interrupts share `CPU8086.enterInterrupt`, which
+builds the real-mode FLAGS/CS/IP frame and reads CS:IP from the physical IVT.
 
 **Established policies:**
 - **Unknown opcodes:** no-op-and-advance at a provisional 3 clocks (never wedges;
@@ -66,9 +67,9 @@ that path for CPU-generated and external events.
   decoded ModR/M group still consume their full instruction so IP stays aligned.
 - **Flags:** `applyArithmetic` (all six) vs. `applyArithmeticPreservingCarry`
   (INC/DEC). Control flags TF/IF/DF are never touched by arithmetic.
-- **Divide errors:** M26 records `CPUFault.divideError` and halts without
-  partially writing quotient/remainder. M35 will replace this sentinel with
-  authentic interrupt-vector-0 delivery.
+- **Divide errors:** DIV/IDIV preserve operands on zero-divisor or quotient
+  overflow and enter vector 0 with the original 8086's following-IP return
+  semantics (not the restartable fault semantics of later x86 generations).
 - **Cycle counts** come from the documented 8086 timing table (EA clocks carried
   on `ModRM`) — verify against a table, never guess.
 
@@ -331,15 +332,15 @@ MOV r/m,imm reg/mem with full IP advance, and the reg≠0 unknown path.
   /2 NOT (no flags), /3 NEG (SUB from zero; CF set unless operand was 0),
   /4 MUL (AX = AL×r/m8, DX:AX = AX×r/m16; CF/OF set when the high half is
   nonzero), /5 IMUL (signed), /6 DIV, /7 IDIV (quotient/remainder into
-  AL/AH or AX/DX). Divide-by-zero and quotient overflow should raise the
-  not-yet-implemented INT 0 path — until interrupts exist, halt with a
-  documented `CPUFault.divideError` sentinel and a TODO. The original 8086
-  also faults when IDIV would produce the most-negative byte/word quotient.
+  AL/AH or AX/DX). Divide-by-zero and quotient overflow originally used a
+  temporary `CPUFault.divideError` halt sentinel; M35 replaced it with vector 0
+  delivery. The original 8086 also faults when IDIV would produce the
+  most-negative byte/word quotient.
 - **Don't:** Exact multi-cycle timing fidelity (MUL/DIV timings vary by
   operand; use the rounded midpoint of each documented range and note it).
 - **Tests:** NOT/NEG including NEG 0 and NEG 0x80/0x8000 (OF set, value
   unchanged), MUL/IMUL sign and high-half flag behavior, DIV/IDIV
-  quotient/remainder signs, divide-by-zero sentinel, TEST imm parity with
+  quotient/remainder signs, divide-error operand preservation, TEST imm parity with
   `A8`/`84`.
 
 ---
@@ -425,7 +426,7 @@ matrix introduced in M39 is the CPU-completion gate.
   REPE/REPNE repeat CMPS/SCAS while CX is nonzero and the post-iteration ZF gate
   holds. CX=0 performs no data access. Charge setup plus per-iteration clocks.
   Structure execution so an interrupt boundary can be inserted between
-  iterations in M35 without redesigning the decoded instruction.
+  iterations without redesigning the decoded instruction.
 - **Don't:** Give REP meaning on unrelated opcodes beyond consuming the prefix;
   implement 186+ aliases.
 - **Tests:** Zero/one/many iterations, early compare exit both ways, DF, CX and
@@ -444,7 +445,7 @@ matrix introduced in M39 is the CPU-completion gate.
 - **Tests:** Exact stack frame and order, IVT little-endian layout, nested INT
   and IRET, INT3 return IP, both INTO paths, SP wrap, and reserved FLAGS bits.
 
-### M35 — CPU-generated and external interrupts, shadows, HLT wake
+### M35 — CPU-generated and external interrupts, shadows, HLT wake ✅
 - **Goal:** Make interrupts a machine-level event rather than only an opcode.
 - **Build:** Route divide errors from M26 through vector 0; deliver trap vector 1
   after an instruction when TF is set; add NMI and maskable INTR inputs with

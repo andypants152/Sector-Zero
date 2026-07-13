@@ -1,7 +1,7 @@
 import Foundation
 
-/// Temporary observable halt reasons used until M35 can route CPU-generated
-/// faults through the real-mode interrupt mechanism.
+/// Legacy snapshot surface retained for compatibility. CPU-generated divide
+/// errors now route through the real-mode interrupt table.
 enum CPUFault: Equatable, Sendable {
     case divideError
 }

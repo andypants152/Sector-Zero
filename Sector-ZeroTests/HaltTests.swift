@@ -5,7 +5,7 @@ import Testing
 ///
 /// Executing HLT (0xF4, 2 clocks) puts the CPU into a halted state. While
 /// halted, `Machine.step()` is a no-op — no fetch, no IP movement, no cycles.
-/// Only reset exits halt for now; interrupt-driven wake comes much later.
+/// Reset exits halt; M35 also allows an accepted NMI or enabled INTR to wake it.
 /// `Machine.run(maxSteps:)` steps until halt or the bound, so tests can't hang.
 struct HaltTests {
     private let resetVector: UInt32 = 0xFFFF0

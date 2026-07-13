@@ -16,6 +16,11 @@ enum RepeatPrefix: Equatable, Sendable {
     }
 }
 
+struct RepeatExecutionResult: Equatable, Sendable {
+    let cycles: Int
+    let interrupted: Bool
+}
+
 /// A decoded 8086 instruction, independent of how its bytes were fetched.
 ///
 /// Milestone 3 covers only the single-byte opcodes NOP and HLT; any other

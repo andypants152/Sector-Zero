@@ -71,23 +71,24 @@ struct FlagInstructionTests {
         // second POPF, then restore the saved word.
         let machine = machineWithOpcodes([
             0xBC, 0x00, 0x02,             // MOV SP,0200
-            0xB8, 0xD5, 0x0F, 0x50, 0x9D, // writable flags all set
+            0xB8, 0xD5, 0x0E, 0x50, 0x9D, // all writable flags except TF
             0x9C,                          // save FLAGS at 01FE
             0xB8, 0x00, 0x00, 0x50, 0x9D, // clear writable flags
             0x9D,                          // restore saved FLAGS
         ])
         machine.run(maxSteps: 9)
 
-        #expect(machine.cpu.flags.rawValue == 0xFFD7)
+        #expect(machine.cpu.flags.rawValue == 0xFED7)
         #expect(machine.cpu.sp == 0x0200)
     }
 
     @Test("LAHF writes the exact status-byte layout and preserves AL")
     func loadStatusFlagsIntoAH() {
-        // POPF seeds SF/ZF/AF/PF/CF plus OF/DF/IF/TF, then LAHF.
+        // POPF seeds SF/ZF/AF/PF/CF plus OF/DF/IF, then LAHF. TF stays clear
+        // so M35's single-step delivery does not redirect this flag-transfer test.
         let machine = machineWithOpcodes([
             0xBC, 0x00, 0x01,
-            0xB8, 0xD5, 0x0F,
+            0xB8, 0xD5, 0x0E,
             0x50, 0x9D,
             0x9F,
         ])
@@ -96,7 +97,7 @@ struct FlagInstructionTests {
         #expect(machine.cpu.registers[.ah] == 0xD7) // S Z 0 A 0 P 1 C
         #expect(machine.cpu.registers[.al] == 0xD5)
         #expect(machine.cpu.flags[.overflow])
-        #expect(machine.cpu.flags[.trap])
+        #expect(!machine.cpu.flags[.trap])
         #expect(machine.cpu.flags[.interruptEnable])
         #expect(machine.cpu.flags[.direction])
         #expect(machine.cycleCount == 31) // MOVs 8 + PUSH 11 + POPF 8 + LAHF 4
@@ -108,14 +109,14 @@ struct FlagInstructionTests {
         // flags. MOV does not disturb the seeded control flags or OF.
         let machine = machineWithOpcodes([
             0xBC, 0x00, 0x01,
-            0xB8, 0xFF, 0xFF,
+            0xB8, 0xFF, 0xFE,
             0x50, 0x9D,
             0xB8, 0x00, 0x00,
             0x9E,
         ])
         machine.run(maxSteps: 6)
 
-        #expect(machine.cpu.flags.rawValue == 0xFF02)
+        #expect(machine.cpu.flags.rawValue == 0xFE02)
         #expect(machine.cycleCount == 35) // MOVs 12 + PUSH 11 + POPF 8 + SAHF 4
     }
 

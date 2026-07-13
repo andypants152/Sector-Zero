@@ -2,8 +2,7 @@ import Testing
 @testable import Sector_Zero
 
 /// Milestone 26 — the 8086 F6/F7 unary arithmetic group. Undefined flags are
-/// preserved deterministically, and divide errors halt with an observable
-/// sentinel until interrupt vector 0 is implemented in M35.
+/// preserved deterministically. M35 routes divide errors through vector 0.
 struct UnaryGroupTests {
     private let resetVector: UInt32 = 0xFFFF0
 
@@ -182,28 +181,32 @@ struct UnaryGroupTests {
         #expect(word.cpu.registers[.dx] == 0xFFFF)
     }
 
-    @Test("Divide by zero halts with a divide-error sentinel and preserves operands")
+    @Test("Divide by zero enters vector 0 and preserves operands")
     func divideByZeroFault() {
         let machine = machineWithOpcodes([0xB8, 0x34, 0x12, 0xB3, 0x00, 0xF6, 0xF3])
         machine.run(maxSteps: 3)
         #expect(machine.cpu.registers[.ax] == 0x1234)
         #expect(machine.cpu.registers[.bl] == 0)
-        #expect(machine.cpu.halted)
-        #expect(machine.cpu.fault == .divideError)
-        #expect(machine.snapshot().cpu.fault == .divideError)
+        #expect(!machine.cpu.halted)
+        #expect(machine.cpu.fault == nil)
+        #expect(machine.cpu.cs == 0)
+        #expect(machine.cpu.ip == 0)
+        #expect(machine.cpu.sp == 0xFFFA)
 
         machine.reset()
         #expect(!machine.cpu.halted)
         #expect(machine.cpu.fault == nil)
     }
 
-    @Test("Unsigned quotient overflow raises divide error without partial writes")
+    @Test("Unsigned quotient overflow enters vector 0 without partial writes")
     func quotientOverflowFault() {
         // 0100h / 1 cannot fit in AL.
         let machine = machineWithOpcodes([0xB8, 0x00, 0x01, 0xB3, 0x01, 0xF6, 0xF3])
         machine.run(maxSteps: 3)
         #expect(machine.cpu.registers[.ax] == 0x0100)
-        #expect(machine.cpu.fault == .divideError)
+        #expect(machine.cpu.cs == 0)
+        #expect(machine.cpu.ip == 0)
+        #expect(machine.cpu.fault == nil)
     }
 
     @Test("Original 8086 IDIV faults on its most-negative quotient")
@@ -212,7 +215,9 @@ struct UnaryGroupTests {
         let machine = machineWithOpcodes([0xB8, 0x80, 0xFF, 0xB3, 0x01, 0xF6, 0xFB])
         machine.run(maxSteps: 3)
         #expect(machine.cpu.registers[.ax] == 0xFF80)
-        #expect(machine.cpu.fault == .divideError)
+        #expect(machine.cpu.cs == 0)
+        #expect(machine.cpu.ip == 0)
+        #expect(machine.cpu.fault == nil)
     }
 
     @Test("Memory MUL honors segment override and midpoint timing")

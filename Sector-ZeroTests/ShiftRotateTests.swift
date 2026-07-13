@@ -126,7 +126,7 @@ struct ShiftRotateTests {
         // Seed FLAGS via POPF, set BL, set CL=0, then SHL BL,CL.
         let machine = machineWithOpcodes([
             0xBC, 0x00, 0x01,
-            0xB8, 0xD5, 0x0F, 0x50, 0x9D,
+            0xB8, 0xD5, 0x0E, 0x50, 0x9D, // TF clear; trap delivery is tested in M35
             0xB3, 0x81,
             0xB1, 0x00,
             0xD2, 0xE3,
