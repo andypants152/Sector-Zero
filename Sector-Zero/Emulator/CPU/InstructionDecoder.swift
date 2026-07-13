@@ -64,6 +64,13 @@ struct InstructionDecoder {
                 condition: JumpCondition(encoding: opcode & 0xF),
                 displacement: Int8(bitPattern: nextByte())
             )
+        case 0xC3:
+            return .returnNear
+        case 0xE8:
+            // CALL near-relative: signed disp16, little-endian in the stream.
+            let low = nextByte()
+            let high = nextByte()
+            return .callNearRelative(displacement: Int16(bitPattern: UInt16(high) << 8 | UInt16(low)))
         case 0xEB:
             return .jumpShort(displacement: Int8(bitPattern: nextByte()))
         case 0x88, 0x89, 0x8A, 0x8B:

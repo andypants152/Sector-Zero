@@ -14,8 +14,9 @@ This document is a handoff brief so another contributor (human or AI) can take o
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
-(ALU flag engine + ADD), M11 (SUB/CMP), M12 (conditional jumps), and M13
-(PUSH/POP) are complete and tested. The next milestone is M14 below.
+(ALU flag engine + ADD), M11 (SUB/CMP), M12 (conditional jumps), M13
+(PUSH/POP), and M14 (CALL/RET near) are complete and tested. The next
+milestone is M15 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -174,18 +175,27 @@ storing the decremented value — and pinned by a test that initially caught the
 286-style behavior. LIFO order, SS-vs-DS separation, SP wrap at 0, and
 flag preservation are all covered. PUSHF/POPF, sreg and r/m forms deferred.
 
-### M14 — CALL/RET near (0xE8, 0xC3)
-- **Goal:** Subroutines — enough machinery to run real structured programs
-  within one code segment.
-- **Build:** `E8` CALL near-relative: fetch a 16-bit displacement, push the
-  return IP (address of the next instruction), then IP += disp (16-bit wrap).
-  `C3` RET near: pop IP. Reuses M13's stack helpers unchanged. Cycles: CALL
-  **19**, RET **16** — verify. After this, write the first end-to-end program
-  test: a called subroutine that computes something, returns, and HLTs.
-- **Don't:** Far CALL/RET (`9A`/`CB`), RET imm16 (`C2`), CALL r/m (`FF /2`).
-- **Tests:** CALL pushes the correct return address and lands at the target
-  (forward and backward); RET resumes after the CALL; nested calls unwind in
-  order; the end-to-end program leaves the expected register state and halt.
+### M14 — CALL/RET near (0xE8, 0xC3) ✅
+`E8` fetches a little-endian signed disp16; IP already points past it, so
+that value is the return address — pushed via M13's `push16`, then
+IP += disp with 16-bit wrap. `C3` pops IP. Cycles: CALL 19, RET 16. Flags
+untouched. Tested: forward/backward-wrap targets, return-address contents on
+the stack, nested calls unwinding in order, flag preservation, and the first
+end-to-end program (CALL a subroutine that ADDs, RET, HLT). Far CALL/RET
+(`9A`/`CB`), RET imm16 (`C2`), and CALL r/m (`FF /2`) deferred.
+
+### M15 — Immediate ALU forms (0x80–0x83)
+- **Goal:** ADD/SUB/CMP with immediate operands — the `80`/`81`/`83` ModR/M
+  group where bits 5–3 of the ModR/M byte select the operation.
+- **Build:** Decode the group via `ModRMDecoder` (reg field = op selector:
+  /0 ADD, /5 SUB, /7 CMP — leave the other five ops `.unknown`-style
+  no-op-and-advance or defer them cleanly), then the immediate: `80` imm8,
+  `81` imm16, `83` sign-extended imm8 → 16-bit. Reuse the M10/M11 ALU and
+  operand helpers. Cycles: reg 4, mem 17+EA (CMP mem 10+EA) — verify.
+- **Don't:** The logical ops of the group (OR/AND/XOR/ADC/SBB) unless the
+  enum extension is trivial; segment overrides; `82` (undocumented alias).
+- **Tests:** each op × reg/mem × width, `83` sign extension both directions,
+  flag parity with the register-form equivalents.
 
 ---
 

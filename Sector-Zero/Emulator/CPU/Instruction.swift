@@ -21,6 +21,8 @@ enum Instruction: Equatable {
     case aluRMToRegister16(op: ALUBinaryOp, destination: Register16, source: ModRMOperand, eaClocks: Int)
     case pushRegister16(Register16)
     case popRegister16(Register16)
+    case callNearRelative(displacement: Int16)
+    case returnNear
     case jumpConditional(condition: JumpCondition, displacement: Int8)
     case jumpShort(displacement: Int8)
     case unknown(UInt8)

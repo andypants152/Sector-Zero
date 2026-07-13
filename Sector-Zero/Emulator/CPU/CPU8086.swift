@@ -171,6 +171,15 @@ final class CPU8086 {
         case .popRegister16(let register):
             registers[register] = pop16()
             return 8
+        case .callNearRelative(let displacement):
+            // IP already points past the displacement word, so it is the
+            // return address; push it, then branch relative with 16-bit wrap.
+            push16(ip)
+            ip = ip &+ UInt16(bitPattern: displacement)
+            return 19
+        case .returnNear:
+            ip = pop16()
+            return 16
         case .jumpConditional(let condition, let displacement):
             // IP already points past the displacement byte; a taken branch
             // adds the sign-extended offset with 16-bit wrap.
