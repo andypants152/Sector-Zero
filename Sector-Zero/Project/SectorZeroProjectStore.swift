@@ -104,6 +104,38 @@ enum SectorZeroProjectStore {
         return updated
     }
 
+    /// Copies a prospective floppy image into the package's disk folder and
+    /// records its package-relative location. Geometry and media validation
+    /// belong to M47's floppy-media layer; this method only provides atomic
+    /// project storage and backward-compatible metadata.
+    static func installDiskImage(
+        _ image: Data,
+        named rawFileName: String,
+        into project: SectorZeroProject
+    ) throws -> SectorZeroProject {
+        let fileName = sanitizedFileName(for: rawFileName, fallback: "floppy.img")
+        try FileManager.default.createDirectory(
+            at: project.diskImageURL,
+            withIntermediateDirectories: true
+        )
+        let destinationURL = project.diskImageURL.appendingPathComponent(fileName, isDirectory: false)
+        try image.write(to: destinationURL, options: [.atomic])
+
+        var updated = project
+        updated.metadata.diskImagePath = "disk/\(fileName)"
+        try save(updated)
+        return updated
+    }
+
+    /// Ejects the configured image without deleting it from the project. This
+    /// keeps eject reversible and avoids surprising data loss.
+    static func ejectDiskImage(from project: SectorZeroProject) throws -> SectorZeroProject {
+        var updated = project
+        updated.metadata.diskImagePath = nil
+        try save(updated)
+        return updated
+    }
+
     static func save(_ project: SectorZeroProject) throws {
         let metadataURL = project.projectURL.appendingPathComponent(metadataFileName, isDirectory: false)
         let data = try encoder.encode(project)
@@ -137,10 +169,14 @@ enum SectorZeroProjectStore {
     }
 
     private static func sanitizedFirmwareFileName(for rawFileName: String) -> String {
+        sanitizedFileName(for: rawFileName, fallback: "firmware.bin")
+    }
+
+    private static func sanitizedFileName(for rawFileName: String, fallback: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: "/:").union(.newlines).union(.controlCharacters)
         let components = rawFileName.components(separatedBy: invalidCharacters)
         let sanitized = components.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? "firmware.bin" : sanitized
+        return sanitized.isEmpty ? fallback : sanitized
     }
 
     private static let encoder: JSONEncoder = {

@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M46 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M47 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -26,8 +26,9 @@ physical memory map, protected system ROM, and project firmware loading; master
 8259A interrupt routing, masking, priority, and EOI; deterministic 8253 timer,
 IRQ0, and channel-2 speaker gate; CGA 80×25 text VRAM, CRTC state, and snapshot-
 driven CRT rendering; XT keyboard scan-code delivery through the 8255/PIC;
-and 8237A floppy-channel DMA with page wrapping, terminal count, masking, and
-cycle accounting). The next milestone is M47 below.
+8237A floppy-channel DMA with page wrapping, terminal count, masking, and cycle
+accounting; and a 765-compatible read-only floppy path with project media
+mount/eject). The next milestone is M48 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -543,8 +544,8 @@ matrix introduced in M39 is the CPU-completion gate.
 **Compatibility target:** define Sector Zero as an IBM-PC-compatible real-mode
 machine built around the existing 8086 core. It need not reproduce 8088 bus
 timing, but its memory map, I/O ports, interrupts, BIOS contracts, and disk/video
-behavior must be compatible enough for unmodified PC DOS applications. Record
-every intentional deviation in a machine-profile document before M41.
+behavior must be compatible enough for unmodified PC DOS applications. Intentional
+deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_PROFILE.md).
 
 ### M40 — Deterministic machine scheduler + run/pause ✅
 - **Goal:** Turn instruction clock counts into the timebase that drives devices
@@ -562,7 +563,9 @@ every intentional deviation in a machine-profile document before M41.
   returns one consistent immutable snapshot plus an explicit stop reason. The
   workspace runs 2,048-instruction slices on a dedicated execution queue,
   publishes one snapshot per slice on the main actor, and exposes responsive
-  RUN/PAUSE state while disabling STEP. Scheduler and workspace tests cover
+  RUN/PAUSE state while disabling STEP. Host speed-cap waits poll pause state in
+  bounded intervals so throttling cannot hold PAUSE until the end of a long
+  wall-clock sleep. Scheduler and workspace tests cover
   device totals, interrupt wakeup, bounds, pause, reset, and UI-facing state.
 
 ### M41 — PC memory map, ROM regions, and firmware loading ✅
@@ -711,7 +714,9 @@ every intentional deviation in a machine-profile document before M41.
   incrementing single mode without auto-initialization: verify, device→memory,
   and memory→device each service at most one DREQ byte. Counts use the 8237's
   N−1 convention, latch terminal count until status is read, and wrap the
-  16-bit address inside a fixed page at 64 KiB. Transfers use ordinary bus
+  16-bit address inside a fixed page at 64 KiB. Terminal count produces internal
+  EOP and masks channel 2 when auto-initialize is disabled, preventing an asserted
+  DREQ from overrunning the programmed buffer. Transfers use ordinary bus
   reads/writes, retaining reserved/ROM protection diagnostics, and charge four
   deterministic system clocks through the machine clock so PIT/CGA time advances
   with stolen DMA cycles. Immutable machine snapshots expose the complete
@@ -721,7 +726,7 @@ every intentional deviation in a machine-profile document before M41.
   protection, and exact clock impact. Channels 0/1/3 and demand/block/cascade,
   decrement, and auto-initialize modes remain deferred until hardware needs them.
 
-### M47 — Floppy controller + project disk image
+### M47 — Floppy controller + project disk image ✅
 - **Goal:** Expose the project's disk image as a bootable PC floppy.
 - **Build:** Implement the minimal 765-compatible command/result phases needed
   for reset, seek/recalibrate, sense interrupt, and DMA-backed sector reads;
@@ -730,6 +735,25 @@ every intentional deviation in a machine-profile document before M41.
 - **Don't:** Start with writes, copy protection, or every controller command.
 - **Tests:** Command state machine, CHS reads, DMA/IRQ ordering, missing/bad media,
   end-of-track and bounds errors, reset, and fixture-image integrity.
+- **Completed:** The PC bus now maps a minimal 765-compatible controller across
+  ports 3F2h–3F7h with DOR reset/enable behavior, MSR phase reporting, command
+  and result framing, SPECIFY, SENSE DRIVE STATUS, SENSE INTERRUPT, SEEK,
+  RECALIBRATE, and READ DATA. Drive 0 accepts deterministic raw geometries from
+  160 KiB through 1.44 MiB; READ DATA validates CHS/size/EOT, walks sectors
+  (including multi-track reads), asserts channel-2 DREQ, and returns normal or
+  abnormal seven-byte results. Each byte crosses the ordinary protected bus in
+  a four-clock DMA service before terminal count ends execution and raises IRQ6,
+  preserving completion-before-interrupt ordering even while the CPU is halted.
+  Controller reset clears electronics and head position while retaining mounted
+  host media. Project packages validate and copy selected images, remount them
+  on reopen, and eject without deleting the package copy; the browser provides
+  Choose/Eject controls and snapshots expose controller/media state to the
+  inspector. Tests cover supported sizes, port phases, reset sense statuses,
+  seek, invalid commands, exact fixture-sector integrity, DMA terminal count and
+  IRQ ordering, missing media, EOT/cylinder failures, reset/eject, project reopen,
+  snapshot publication, and rejection without metadata mutation. Writes,
+  formatting, deleted-data scans, copy protection, and additional drives remain
+  deferred.
 
 ### M48 — Clean-room BIOS foundation and diagnostics
 - **Goal:** Execute real firmware from the reset vector and prove the whole

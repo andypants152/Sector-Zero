@@ -146,6 +146,37 @@ struct PCMemoryMapTests {
 
 @MainActor
 struct ProjectFirmwareTests {
+    @Test("Project disk images install, reopen, and eject without deleting the package copy")
+    func projectDiskImageLifecycle() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SectorZeroDiskImageTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var project = try SectorZeroProjectStore.createProject(named: "Disk", in: root)
+        #expect(project.metadata.diskImagePath == nil)
+        #expect(project.configuredDiskImageURL == nil)
+
+        let image = Data([0x53, 0x5A, 0x44, 0x49, 0x53, 0x4B])
+        project = try SectorZeroProjectStore.installDiskImage(
+            image,
+            named: "boot:disk.img",
+            into: project
+        )
+        let installedURL = try #require(project.configuredDiskImageURL)
+        #expect(project.metadata.diskImagePath == "disk/boot-disk.img")
+        #expect(try Data(contentsOf: installedURL) == image)
+
+        project = try SectorZeroProjectStore.openProject(at: project.projectURL)
+        #expect(project.configuredDiskImageURL == installedURL)
+        project = try SectorZeroProjectStore.ejectDiskImage(from: project)
+        #expect(project.configuredDiskImageURL == nil)
+        #expect(FileManager.default.fileExists(atPath: installedURL.path))
+
+        let reopened = try SectorZeroProjectStore.openProject(at: project.projectURL)
+        #expect(reopened.metadata.diskImagePath == nil)
+    }
+
     @Test("Opening a project loads its configured firmware and republishes the snapshot")
     func projectFirmware() throws {
         let defaultsSuite = "SectorZeroTests.ProjectFirmware.\(UUID().uuidString)"

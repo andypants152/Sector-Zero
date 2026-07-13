@@ -12,6 +12,7 @@ struct ProjectBrowserView: View {
     @State private var isShowingNewProject = false
     @State private var isImportingProject = false
     @State private var isImportingFirmware = false
+    @State private var isImportingDiskImage = false
     @State private var projectPendingDeletion: RecentProject?
 
     var body: some View {
@@ -102,6 +103,7 @@ struct ProjectBrowserView: View {
                         .lineLimit(2)
                 }
                 firmwareRow(for: project)
+                diskImageRow(for: project)
             } else {
                 Text("No machine open")
                     .font(.system(size: 13))
@@ -213,6 +215,83 @@ struct ProjectBrowserView: View {
         #else
         isImportingFirmware = true
         #endif
+    }
+
+    private func diskImageRow(for project: SectorZeroProject) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("FLOPPY A")
+                    .font(.sectorMono(10, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.sectorMutedText)
+                Text(project.configuredDiskImageURL?.lastPathComponent ?? "No disk inserted")
+                    .font(.sectorMono(11, weight: .regular))
+                    .foregroundStyle(project.configuredDiskImageURL == nil ? Color.sectorAccent : Color.sectorText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if project.configuredDiskImageURL != nil {
+                Button {
+                    workspace.ejectDiskImage()
+                } label: {
+                    Image(systemName: "eject")
+                }
+                .controlSize(.small)
+                .disabled(workspace.isRunning)
+                .help("Eject floppy image without deleting its package copy")
+                .accessibilityIdentifier("ejectDiskImageButton")
+            }
+
+            Button {
+                chooseDiskImage()
+            } label: {
+                Label("Choose", systemImage: "externaldrive")
+            }
+            .controlSize(.small)
+            .disabled(workspace.isRunning)
+            .help("Install a supported raw floppy image")
+            .accessibilityIdentifier("chooseDiskImageButton")
+        }
+        .padding(.top, 2)
+        .fileImporter(
+            isPresented: $isImportingDiskImage,
+            allowedContentTypes: [.data, .item],
+            allowsMultipleSelection: false
+        ) { result in
+            openImportedDiskImage(result)
+        }
+    }
+
+    private func chooseDiskImage() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Floppy Image"
+        panel.prompt = "Insert"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        workspace.configureDiskImage(from: url)
+        #else
+        isImportingDiskImage = true
+        #endif
+    }
+
+    private func openImportedDiskImage(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let didStartAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccess { url.stopAccessingSecurityScopedResource() }
+            }
+            workspace.configureDiskImage(from: url)
+        case .failure(let error):
+            workspace.errorMessage = error.localizedDescription
+        }
     }
 
     private func openImportedFirmware(_ result: Result<[URL], Error>) {

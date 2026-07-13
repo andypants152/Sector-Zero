@@ -70,6 +70,12 @@ struct DirectMemoryAccessControllerTests {
         #expect(machine.bus.readByte(at: 0x00101) == 0xBB)
         #expect(machine.dmaController.snapshot.channel2.currentAddress == 0x0102)
         #expect(machine.dmaController.snapshot.channel2.currentCount == 0xFFFF)
+        #expect(machine.dmaController.snapshot.channel2.masked)
+
+        let afterTerminalCount = machine.serviceDMAChannel2(deviceRead: { 0xCC })
+        #expect(!afterTerminalCount.transferred)
+        #expect(machine.bus.readByte(at: 0x00102) == 0)
+        #expect(machine.cycleCount == 8)
 
         let status = machine.bus.readIOByte(at: 0x08)
         #expect(status & 0x04 == 0x04) // Channel 2 terminal count.

@@ -255,12 +255,13 @@ final class SectorZeroWorkspace {
             return
         }
 
-        let targetDuration = Double(elapsedClocks) / cyclesPerSecond
-        let actualDuration = Date.timeIntervalSinceReferenceDate - sliceStart
-        let sleepDuration = targetDuration - actualDuration
-        guard sleepDuration > 0 else { return }
-
-        Thread.sleep(forTimeInterval: sleepDuration)
+        let deadline = sliceStart + Double(elapsedClocks) / cyclesPerSecond
+        let pausePollInterval: TimeInterval = 0.01
+        while !control.shouldPause() {
+            let remaining = deadline - Date.timeIntervalSinceReferenceDate
+            guard remaining > 0 else { return }
+            Thread.sleep(forTimeInterval: min(remaining, pausePollInterval))
+        }
     }
 
     /// Requests a pause. The execution queue observes it before the next
@@ -336,6 +337,55 @@ final class SectorZeroWorkspace {
                 into: project
             )
             lastRunStopReason = nil
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Validates and installs a disk-image copy into the open project, then
+    /// mounts the same bytes in the floppy controller without resetting the CPU.
+    @discardableResult
+    func configureDiskImage(from sourceURL: URL) -> Bool {
+        guard !isRunning else { return false }
+        guard let project = currentProject else {
+            errorMessage = "Open a machine before choosing a disk image."
+            return false
+        }
+        do {
+            let image = try Data(contentsOf: sourceURL)
+            _ = try FloppyDiskGeometry.detect(byteCount: image.count)
+            let updatedProject = try SectorZeroProjectStore.installDiskImage(
+                image,
+                named: sourceURL.lastPathComponent,
+                into: project
+            )
+            try machine.mountFloppyDisk(image)
+            currentProject = updatedProject
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Clears the mounted-image selection without deleting the package copy.
+    @discardableResult
+    func ejectDiskImage() -> Bool {
+        guard !isRunning else { return false }
+        guard let project = currentProject else {
+            errorMessage = "Open a machine before ejecting its disk image."
+            return false
+        }
+        do {
+            let updatedProject = try SectorZeroProjectStore.ejectDiskImage(from: project)
+            machine.ejectFloppyDisk()
+            currentProject = updatedProject
             apply(machine.snapshot())
             errorMessage = nil
             return true
@@ -426,6 +476,11 @@ final class SectorZeroWorkspace {
                 try machine.loadSystemROM(Data(contentsOf: firmwareURL))
             } else {
                 machine.clearSystemROM()
+            }
+            if let diskImageURL = project.configuredDiskImageURL {
+                try machine.mountFloppyDisk(Data(contentsOf: diskImageURL))
+            } else {
+                machine.ejectFloppyDisk()
             }
             apply(machine.snapshot())
         } catch {

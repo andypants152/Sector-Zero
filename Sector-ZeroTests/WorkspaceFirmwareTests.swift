@@ -104,4 +104,52 @@ struct WorkspaceFirmwareTests {
         #expect(workspace.errorMessage != nil)
         #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 0)
     }
+
+    @Test("Configuring a supported disk mounts it, persists it, reopens it, and ejects safely")
+    func configureDiskImageLifecycle() throws {
+        let defaultsSuite = "SectorZeroTests.ConfigureDisk.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer { userDefaults.removePersistentDomain(forName: defaultsSuite) }
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = Data(repeating: 0xA5, count: 40 * 1 * 8 * 512)
+        let sourceURL = root.appendingPathComponent("boot.img")
+        try image.write(to: sourceURL)
+
+        let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
+        #expect(workspace.createProject(named: "Disk", in: root))
+        #expect(workspace.configureDiskImage(from: sourceURL))
+        #expect(workspace.currentProject?.metadata.diskImagePath == "disk/boot.img")
+        #expect(workspace.machine.snapshot().floppyController.mediaByteCount == image.count)
+
+        let projectURL = try #require(workspace.currentProject?.projectURL)
+        let installedURL = try #require(workspace.currentProject?.configuredDiskImageURL)
+        let reopened = SectorZeroWorkspace(userDefaults: userDefaults)
+        #expect(reopened.openProject(at: projectURL))
+        #expect(reopened.machineSnapshot.floppyController.mediaByteCount == image.count)
+        #expect(reopened.machineSnapshot.floppyController.mediaGeometry?.sectorsPerTrack == 8)
+
+        #expect(reopened.ejectDiskImage())
+        #expect(reopened.currentProject?.metadata.diskImagePath == nil)
+        #expect(reopened.machineSnapshot.floppyController.mediaGeometry == nil)
+        #expect(FileManager.default.fileExists(atPath: installedURL.path))
+    }
+
+    @Test("An unsupported disk size is rejected before project or media state changes")
+    func rejectsUnsupportedDiskImage() throws {
+        let defaultsSuite = "SectorZeroTests.RejectDisk.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer { userDefaults.removePersistentDomain(forName: defaultsSuite) }
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = root.appendingPathComponent("bad.img")
+        try Data(repeating: 0xCC, count: 1_024).write(to: sourceURL)
+
+        let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
+        #expect(workspace.createProject(named: "Disk", in: root))
+        #expect(!workspace.configureDiskImage(from: sourceURL))
+        #expect(workspace.errorMessage?.contains("Unsupported floppy image size") == true)
+        #expect(workspace.currentProject?.metadata.diskImagePath == nil)
+        #expect(workspace.machineSnapshot.floppyController.mediaGeometry == nil)
+    }
 }

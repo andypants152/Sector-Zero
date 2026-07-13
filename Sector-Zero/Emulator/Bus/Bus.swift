@@ -95,6 +95,7 @@ final class EmulatorBus: Bus {
     let intervalTimer: ProgrammableIntervalTimer
     let peripheralInterface: ProgrammablePeripheralInterface
     let cgaAdapter = CGATextModeAdapter()
+    let floppyController: FloppyDiskController
     private var memoryRegions: [MappedMemoryRegion] = []
     /// Direct 4 KiB page lookup for the 20-bit address space. PC regions and
     /// adapters are page-aligned in normal operation, making the hot path one
@@ -119,6 +120,10 @@ final class EmulatorBus: Bus {
             interruptController: interruptController,
             intervalTimer: intervalTimer
         )
+        self.floppyController = FloppyDiskController(
+            interruptController: interruptController,
+            dmaController: dmaController
+        )
         if installPCMemoryMap {
             precondition(memory.size >= Memory.addressableSize, "PC memory map requires 1 MiB of backing storage")
             try! mapRAM(Self.conventionalRAMRange, name: "Conventional RAM")
@@ -134,6 +139,7 @@ final class EmulatorBus: Bus {
         mapPortDevice(peripheralInterface, to: ProgrammablePeripheralInterface.portA...ProgrammablePeripheralInterface.controlPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.crtcIndexPort...CGATextModeAdapter.crtcDataPort)
         mapPortDevice(cgaAdapter, to: CGATextModeAdapter.modeControlPort...CGATextModeAdapter.statusPort)
+        mapPortDevice(floppyController, to: FloppyDiskController.portRange)
     }
 
     func readByte(at address: UInt32) -> UInt8 {

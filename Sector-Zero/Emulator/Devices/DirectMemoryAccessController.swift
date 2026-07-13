@@ -100,6 +100,15 @@ final class DirectMemoryAccessController: IOPortDevice {
         )
     }
 
+    var canServiceChannel2: Bool {
+        command & 0x04 == 0
+            && !channel2Masked
+            && requestActive
+            && mode & 0x03 == 0x02
+            && mode & 0x30 == 0
+            && mode & 0xC0 == 0x40
+    }
+
     func reset() {
         baseAddress = 0
         currentAddress = 0
@@ -128,12 +137,7 @@ final class DirectMemoryAccessController: IOPortDevice {
         deviceRead: () -> UInt8,
         deviceWrite: (UInt8) -> Void
     ) -> DMAServiceResult {
-        guard command & 0x04 == 0,
-              !channel2Masked,
-              requestActive,
-              mode & 0x03 == 0x02,
-              mode & 0x30 == 0,
-              mode & 0xC0 == 0x40 else {
+        guard canServiceChannel2 else {
             return .inactive
         }
 
@@ -159,6 +163,10 @@ final class DirectMemoryAccessController: IOPortDevice {
         if reachedTerminalCount {
             terminalCountBits |= 0x04
             softwareRequest = false
+            // Internal EOP masks a non-auto-initializing 8237A channel. This
+            // prevents a peripheral that has not lowered DREQ yet from moving
+            // bytes beyond the guest-programmed buffer.
+            channel2Masked = true
         }
 
         return DMAServiceResult(

@@ -94,6 +94,10 @@ final class Machine {
         bus.intervalTimer
     }
 
+    var floppyController: FloppyDiskController {
+        bus.floppyController
+    }
+
     var cgaAdapter: CGATextModeAdapter {
         bus.cgaAdapter
     }
@@ -102,6 +106,7 @@ final class Machine {
         bus.resetMemoryMapDiagnostics()
         dmaController.reset()
         interruptController.reset()
+        floppyController.reset()
         cpu.reset()
         clock.reset()
         pendingNMI = false
@@ -141,6 +146,14 @@ final class Machine {
     func clearSystemROM() {
         bus.clearSystemROM()
         reset()
+    }
+
+    func mountFloppyDisk(_ image: Data) throws {
+        try floppyController.mount(image)
+    }
+
+    func ejectFloppyDisk() {
+        floppyController.eject()
     }
 
     func attachClockedDevice(_ device: any ClockedDevice) {
@@ -207,6 +220,7 @@ final class Machine {
     }
 
     private func stepBoundary() {
+        serviceFloppyDMAIfRequested()
         if resumeRepeatedInstructionIfNeeded() { return }
 
         if let interruptClocks = acceptPendingBoundaryInterrupt(returnCS: cpu.cs, returnIP: cpu.ip) {
@@ -328,11 +342,11 @@ final class Machine {
                 stopReason = .fault(fault)
                 break
             }
-            if cpu.halted && !hasWakeableInterrupt {
+            if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .halted
                 break
             }
-            if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt {
+            if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .waitingForCoprocessor
                 break
             }
@@ -345,9 +359,9 @@ final class Machine {
                 stopReason = .memoryMapViolation(violation)
             } else if let fault = cpu.fault {
                 stopReason = .fault(fault)
-            } else if cpu.halted && !hasWakeableInterrupt {
+            } else if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .halted
-            } else if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt {
+            } else if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .waitingForCoprocessor
             }
         }
@@ -370,6 +384,21 @@ final class Machine {
         if pendingNMI { return true }
         let hasMaskableRequest = pendingINTRVector != nil || interruptController.hasPendingInterrupt
         return maskableShadow == 0 && hasMaskableRequest && cpu.flags[.interruptEnable]
+    }
+
+    private var hasServiceableFloppyDMA: Bool {
+        floppyController.dmaRequestActive && dmaController.canServiceChannel2
+    }
+
+    private func serviceFloppyDMAIfRequested() {
+        guard floppyController.dmaRequestActive else { return }
+        let result = bus.serviceDMAChannel2(
+            deviceRead: floppyController.takeDMAByte,
+            deviceWrite: { _ in }
+        )
+        guard result.transferred else { return }
+        advanceClock(by: result.clocks)
+        floppyController.completeDMAService(result)
     }
 
     private func resumeRepeatedInstructionIfNeeded() -> Bool {
@@ -525,6 +554,7 @@ final class Machine {
             lastMemoryMapError: bus.lastMemoryMapError,
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
             dmaController: dmaController.snapshot,
+            floppyController: floppyController.snapshot,
             interruptController: interruptController.snapshot,
             intervalTimer: intervalTimer.snapshot,
             peripheralInterface: bus.peripheralInterface.snapshot,

@@ -56,6 +56,7 @@ struct CPUInspectorView: View {
             valueRow(name: "PHYS", value: String(format: "%05X", state.physicalCodeAddress))
             valueRow(name: "OPC", value: cpu.lastFetchedOpcodeText)
             valueRow(name: "KBD", value: keyboardText)
+            valueRow(name: "FDC", value: floppyText)
             stateRow
         }
     }
@@ -65,6 +66,17 @@ struct CPUInspectorView: View {
         let ppi = state.peripheralInterface
         let latched = ppi.latchedScanCode.map { String(format: "%02X", $0) } ?? "--"
         return "\(latched) +\(ppi.pendingScanCodeCount)"
+    }
+
+    private var floppyText: String {
+        let floppy = state.floppyController
+        guard floppy.mediaGeometry != nil else { return "EMPTY" }
+        switch floppy.phase {
+        case .idle: return "READY"
+        case .command: return "CMD"
+        case .execution: return "DMA"
+        case .result: return "RESULT"
+        }
     }
 
     private var stateRow: some View {

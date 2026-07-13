@@ -62,6 +62,23 @@ struct WorkspaceRunTests {
         #expect(workspace.machineSnapshot.cycleCount > 0)
     }
 
+    @Test("PAUSE interrupts a pending speed-cap wait promptly")
+    func pauseInterruptsThrottle() async {
+        // AAM (83 clocks) plus the short jump (15 clocks) makes each 2,048
+        // instruction slice take about 0.4 seconds at 250 KHz.
+        let workspace = workspaceWithBytes([0xD4, 0x0A, 0xEB, 0xFC])
+        workspace.runSpeedCap = .khz250
+
+        workspace.run()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let pauseStarted = Date.timeIntervalSinceReferenceDate
+        workspace.pause()
+
+        #expect(await waitUntil { !workspace.isRunning })
+        #expect(Date.timeIntervalSinceReferenceDate - pauseStarted < 0.2)
+        #expect(workspace.lastRunStopReason == .paused)
+    }
+
     @Test("Workspace reset republishes a clean consistent snapshot")
     func reset() {
         let workspace = workspaceWithBytes([0x90])

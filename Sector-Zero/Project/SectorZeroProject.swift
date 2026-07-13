@@ -16,8 +16,19 @@ struct SectorZeroProject: Codable, Equatable, Identifiable, Sendable {
         projectURL.appendingPathComponent("firmware", isDirectory: true)
     }
 
+    /// `diskImageURL` remains the package's existing disk-folder URL. The
+    /// selected image is recorded separately so format-version-1 projects
+    /// continue to decode unchanged.
+    var configuredDiskImageURL: URL? {
+        resolvedProjectFileURL(metadata.diskImagePath)
+    }
+
     var configuredFirmwareURL: URL? {
-        guard let path = metadata.firmwarePath, !path.isEmpty else { return nil }
+        resolvedProjectFileURL(metadata.firmwarePath)
+    }
+
+    private func resolvedProjectFileURL(_ configuredPath: String?) -> URL? {
+        guard let path = configuredPath, !path.isEmpty else { return nil }
         if path.hasPrefix("/") {
             return URL(fileURLWithPath: path)
         }
@@ -30,17 +41,20 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var buildSettings: [String: String]
     var userInfo: [String: String]
     var firmwarePath: String?
+    var diskImagePath: String?
 
     init(
         formatVersion: Int = 1,
         buildSettings: [String: String] = [:],
         userInfo: [String: String] = [:],
-        firmwarePath: String? = nil
+        firmwarePath: String? = nil,
+        diskImagePath: String? = nil
     ) {
         self.formatVersion = formatVersion
         self.buildSettings = buildSettings
         self.userInfo = userInfo
         self.firmwarePath = firmwarePath
+        self.diskImagePath = diskImagePath
     }
 }
 

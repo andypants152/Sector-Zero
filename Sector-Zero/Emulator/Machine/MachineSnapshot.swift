@@ -13,6 +13,7 @@ struct MachineSnapshot: Equatable, Sendable {
     let lastMemoryMapError: MemoryMapError?
     let rejectedROMWriteCount: Int
     let dmaController: DirectMemoryAccessControllerSnapshot
+    let floppyController: FloppyDiskControllerSnapshot
     let interruptController: ProgrammableInterruptControllerSnapshot
     let intervalTimer: ProgrammableIntervalTimerSnapshot
     let peripheralInterface: ProgrammablePeripheralInterfaceSnapshot
