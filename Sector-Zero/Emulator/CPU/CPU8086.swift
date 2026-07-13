@@ -357,6 +357,22 @@ final class CPU8086 {
             let address = resolved(EffectiveAddress(offset: offset, defaultSegment: .ds))
             registers[.al] = bus.readByte(at: physicalAddress(of: address))
             return 11
+        case .input(let portSource, let isWord):
+            let port = ioPort(from: portSource)
+            if isWord {
+                registers[.ax] = bus.readIOWord(at: port)
+            } else {
+                registers[.al] = bus.readIOByte(at: port)
+            }
+            return ioClocks(for: portSource)
+        case .output(let portSource, let isWord):
+            let port = ioPort(from: portSource)
+            if isWord {
+                bus.writeIOWord(registers[.ax], at: port)
+            } else {
+                bus.writeIOByte(registers[.al], at: port)
+            }
+            return ioClocks(for: portSource)
         case .shiftRotate8(let operation, let destination, let countSource, let eaClocks):
             let count: UInt8 = countSource == .one ? 1 : registers[.cl]
             let outcome = ALU.shiftRotate8(
@@ -930,6 +946,20 @@ final class CPU8086 {
     private func raiseDivideError() {
         divideErrorPending = true
         fault = nil
+    }
+
+    private func ioPort(from source: IOPortSource) -> UInt16 {
+        switch source {
+        case .immediate(let port): UInt16(port)
+        case .dx: registers[.dx]
+        }
+    }
+
+    private func ioClocks(for source: IOPortSource) -> Int {
+        switch source {
+        case .immediate: 10
+        case .dx: 8
+        }
     }
 
     /// MUL/DIV costs are operand-dependent ranges on the 8086. Until the core

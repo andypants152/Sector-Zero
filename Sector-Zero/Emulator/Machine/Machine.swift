@@ -13,7 +13,7 @@ private struct SuspendedRepeat {
 
 final class Machine {
     let memory: Memory
-    let bus: Bus
+    let bus: EmulatorBus
     let cpu: CPU8086
     private let clock: ExecutionClock
     private let decoder = InstructionDecoder()

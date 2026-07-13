@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M37 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M38 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -20,7 +20,7 @@ shifts/rotates; unary arithmetic incl. multiply/divide; r/m INC/DEC/PUSH/POP;
 indirect near CALL/JMP; far CALL/JMP and immediate/far RET; LEA/LDS/LES;
 MOVS/LODS/STOS; CMPS/SCAS; REP/REPE/REPNE; software interrupts and IRET;
 CPU-generated, NMI, and maskable interrupt delivery; decimal and ASCII adjust;
-sign extension and XLAT). The next milestone is M38 below.
+sign extension and XLAT; port I/O and IN/OUT). The next milestone is M39 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment and
@@ -490,7 +490,7 @@ matrix introduced in M39 is the CPU-completion gate.
   reads through the override-aware DS data path, and costs 11 clocks. All three
   leave FLAGS unchanged.
 
-### M38 — Port I/O bus and IN/OUT (0xE4–0xE7, 0xEC–0xEF)
+### M38 — Port I/O bus and IN/OUT (0xE4–0xE7, 0xEC–0xEF) ✅
 - **Goal:** Create the CPU↔device boundary required by PC-compatible hardware.
 - **Build:** Add a 16-bit I/O-port space beside memory on `Bus`, with explicit
   byte/word reads and writes. Implement immediate-port and DX-port IN/OUT for
@@ -500,6 +500,10 @@ matrix introduced in M39 is the CPU-completion gate.
 - **Tests:** All eight encodings, immediate-port zero extension, full 16-bit DX
   ports, word transfers through a spy port device, unmapped behavior,
   flags/register isolation, and clocks.
+- **Completed:** `EmulatorBus` owns a non-overlapping UInt16 port map and routes
+  explicit byte/word transfers to `IOPortDevice`; unmapped reads return FFh or
+  FFFFh and writes are ignored. All immediate and DX forms preserve FLAGS and
+  non-destination registers. Immediate ports cost 10 clocks and DX ports 8.
 
 ### M39 — LOCK/WAIT/ESC policy and CPU completion gate (0x9B, 0xD8–0xDF, 0xF0)
 - **Goal:** Close the opcode table deliberately and declare the integer core

@@ -387,6 +387,14 @@ struct InstructionDecoder {
             return .convertWordToDoubleword
         case 0xD7:
             return .translateByte
+        case 0xE4, 0xE5:
+            return .input(port: .immediate(nextByte()), isWord: opcode & 1 != 0)
+        case 0xE6, 0xE7:
+            return .output(port: .immediate(nextByte()), isWord: opcode & 1 != 0)
+        case 0xEC, 0xED:
+            return .input(port: .dx, isWord: opcode & 1 != 0)
+        case 0xEE, 0xEF:
+            return .output(port: .dx, isWord: opcode & 1 != 0)
         case 0xF8:
             return .clearFlag(.carry)
         case 0xF9:

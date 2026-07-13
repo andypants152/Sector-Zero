@@ -16,6 +16,12 @@ enum RepeatPrefix: Equatable, Sendable {
     }
 }
 
+/// IN/OUT select either a zero-extended encoded byte or the full DX register.
+enum IOPortSource: Equatable, Sendable {
+    case immediate(UInt8)
+    case dx
+}
+
 struct RepeatExecutionResult: Equatable, Sendable {
     let cycles: Int
     let interrupted: Bool
@@ -70,6 +76,8 @@ enum Instruction: Equatable {
     case convertByteToWord
     case convertWordToDoubleword
     case translateByte
+    case input(port: IOPortSource, isWord: Bool)
+    case output(port: IOPortSource, isWord: Bool)
     case shiftRotate8(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case shiftRotate16(operation: ShiftRotateOperation, destination: ModRMOperand, count: ShiftCount, eaClocks: Int)
     case testImmediateRM8(destination: ModRMOperand, immediate: UInt8, eaClocks: Int)
