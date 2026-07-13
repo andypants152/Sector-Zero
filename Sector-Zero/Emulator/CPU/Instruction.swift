@@ -11,5 +11,9 @@ enum Instruction: Equatable {
     case hlt
     case movImmediateToRegister8(Register8, UInt8)
     case movImmediateToRegister16(Register16, UInt16)
+    case movRegisterToRM8(source: Register8, destination: ModRMOperand, eaClocks: Int)
+    case movRegisterToRM16(source: Register16, destination: ModRMOperand, eaClocks: Int)
+    case movRMToRegister8(destination: Register8, source: ModRMOperand, eaClocks: Int)
+    case movRMToRegister16(destination: Register16, source: ModRMOperand, eaClocks: Int)
     case unknown(UInt8)
 }

@@ -22,26 +22,28 @@ struct InstructionDecoderTests {
 
     @Test("0x90 decodes to NOP")
     func decodesNOP() {
-        #expect(decoder.decode(opcode: 0x90, nextByte: forbiddenReader()) == .nop)
+        #expect(decoder.decode(opcode: 0x90, registers: RegisterFile(), nextByte: forbiddenReader()) == .nop)
     }
 
     @Test("0xF4 decodes to HLT")
     func decodesHLT() {
-        #expect(decoder.decode(opcode: 0xF4, nextByte: forbiddenReader()) == .hlt)
+        #expect(decoder.decode(opcode: 0xF4, registers: RegisterFile(), nextByte: forbiddenReader()) == .hlt)
     }
 
     @Test("Unrecognised opcodes decode to .unknown carrying the byte", arguments: [
-        UInt8(0x00), 0x0F, 0x42, 0x8B, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
+        UInt8(0x00), 0x0F, 0x42, 0x87, 0x91, 0xAF, 0xC0, 0xF3, 0xF5, 0xFF,
     ])
     func decodesUnknown(opcode: UInt8) {
-        #expect(decoder.decode(opcode: opcode, nextByte: forbiddenReader()) == .unknown(opcode))
+        #expect(decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader()) == .unknown(opcode))
     }
 
     @Test("Opcodes without operands decode without consuming bytes")
     func decodingConsumesNoOperandBytes() {
-        // 0xB0–0xBF (MOV reg, imm) legitimately pull immediate bytes.
-        for opcode in UInt8.min...UInt8.max where !(0xB0...0xBF).contains(opcode) {
-            _ = decoder.decode(opcode: opcode, nextByte: forbiddenReader())
+        // 0xB0–0xBF (MOV reg, imm) and 0x88–0x8B (MOV r/m) legitimately pull
+        // immediate / ModR-M bytes.
+        let operandOpcodes: Set<ClosedRange<UInt8>> = [0x88...0x8B, 0xB0...0xBF]
+        for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
+            _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())
         }
     }
 
@@ -49,9 +51,9 @@ struct InstructionDecoderTests {
     func decodingIsPure() {
         let machine = Machine()
         let before = machine.snapshot()
-        _ = decoder.decode(opcode: 0x90, nextByte: forbiddenReader())
-        _ = decoder.decode(opcode: 0xF4, nextByte: forbiddenReader())
-        _ = decoder.decode(opcode: 0xAB, nextByte: forbiddenReader())
+        _ = decoder.decode(opcode: 0x90, registers: RegisterFile(), nextByte: forbiddenReader())
+        _ = decoder.decode(opcode: 0xF4, registers: RegisterFile(), nextByte: forbiddenReader())
+        _ = decoder.decode(opcode: 0xAB, registers: RegisterFile(), nextByte: forbiddenReader())
         let after = machine.snapshot()
         #expect(after.cpu.ip == before.cpu.ip)
         #expect(after.cpu.lastFetchedOpcode == before.cpu.lastFetchedOpcode)
@@ -63,8 +65,8 @@ struct InstructionDecoderTests {
         for opcode in UInt8.min...UInt8.max {
             var firstStream: [UInt8] = [0x34, 0x12]
             var secondStream: [UInt8] = [0x34, 0x12]
-            let first = decoder.decode(opcode: opcode) { firstStream.removeFirst() }
-            let second = decoder.decode(opcode: opcode) { secondStream.removeFirst() }
+            let first = decoder.decode(opcode: opcode, registers: RegisterFile()) { firstStream.removeFirst() }
+            let second = decoder.decode(opcode: opcode, registers: RegisterFile()) { secondStream.removeFirst() }
             #expect(first == second)
         }
     }

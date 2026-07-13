@@ -5,11 +5,45 @@ import Foundation
 /// Decoding is pure: it never touches registers, memory, or flags. The
 /// `nextByte` reader is the boundary through which operand-bearing
 /// instructions (immediates, ModR/M, displacements) will pull additional
-/// bytes from the code stream in later milestones; the opcodes decoded today
-/// are single-byte, so it is never invoked yet.
+/// bytes from the code stream — immediates and ModR/M displacements. The
+/// register file is read (never written) to resolve effective addresses.
 struct InstructionDecoder {
-    func decode(opcode: UInt8, nextByte: () -> UInt8) -> Instruction {
+    private let modRMDecoder = ModRMDecoder()
+
+    func decode(opcode: UInt8, registers: RegisterFile, nextByte: () -> UInt8) -> Instruction {
         switch opcode {
+        case 0x88, 0x89, 0x8A, 0x8B:
+            // MOV r/m ↔ reg. Bit 0 selects width, bit 1 the direction
+            // (0: reg is source, 1: reg is destination).
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            let isWord = opcode & 0b01 != 0
+            let regIsDestination = opcode & 0b10 != 0
+            switch (isWord, regIsDestination) {
+            case (false, false):
+                return .movRegisterToRM8(
+                    source: Register8(rawValue: modRM.reg)!,
+                    destination: modRM.operand,
+                    eaClocks: modRM.eaClocks
+                )
+            case (true, false):
+                return .movRegisterToRM16(
+                    source: Register16(rawValue: modRM.reg)!,
+                    destination: modRM.operand,
+                    eaClocks: modRM.eaClocks
+                )
+            case (false, true):
+                return .movRMToRegister8(
+                    destination: Register8(rawValue: modRM.reg)!,
+                    source: modRM.operand,
+                    eaClocks: modRM.eaClocks
+                )
+            case (true, true):
+                return .movRMToRegister16(
+                    destination: Register16(rawValue: modRM.reg)!,
+                    source: modRM.operand,
+                    eaClocks: modRM.eaClocks
+                )
+            }
         case 0x90:
             return .nop
         case 0xF4:

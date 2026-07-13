@@ -93,9 +93,89 @@ final class CPU8086 {
         case .movImmediateToRegister16(let register, let value):
             registers[register] = value
             return 4
+        case .movRegisterToRM8(let source, let destination, let eaClocks):
+            // MOV reg→reg is 2 clocks; reg→memory is 9 + EA time.
+            switch destination {
+            case .register(let encoding):
+                registers[Register8(rawValue: encoding)!] = registers[source]
+                return 2
+            case .memory(let address):
+                bus.writeByte(registers[source], at: physicalAddress(of: address))
+                return 9 + eaClocks
+            }
+        case .movRegisterToRM16(let source, let destination, let eaClocks):
+            switch destination {
+            case .register(let encoding):
+                registers[Register16(rawValue: encoding)!] = registers[source]
+                return 2
+            case .memory(let address):
+                writeMemoryWord(registers[source], at: address)
+                return 9 + eaClocks
+            }
+        case .movRMToRegister8(let destination, let source, let eaClocks):
+            // MOV memory→reg is 8 + EA time.
+            switch source {
+            case .register(let encoding):
+                registers[destination] = registers[Register8(rawValue: encoding)!]
+                return 2
+            case .memory(let address):
+                registers[destination] = bus.readByte(at: physicalAddress(of: address))
+                return 8 + eaClocks
+            }
+        case .movRMToRegister16(let destination, let source, let eaClocks):
+            switch source {
+            case .register(let encoding):
+                registers[destination] = registers[Register16(rawValue: encoding)!]
+                return 2
+            case .memory(let address):
+                registers[destination] = readMemoryWord(at: address)
+                return 8 + eaClocks
+            }
         case .unknown:
             return 3
         }
+    }
+
+    /// Writes a segment register. Used by tests today; MOV sreg (0x8E) and
+    /// POP sreg will route through it when they land.
+    func writeSegment(_ value: UInt16, to segment: SegmentRegister) {
+        switch segment {
+        case .es: es = value
+        case .cs: cs = value
+        case .ss: ss = value
+        case .ds: ds = value
+        }
+    }
+
+    private func segmentValue(_ segment: SegmentRegister) -> UInt16 {
+        switch segment {
+        case .es: return es
+        case .cs: return cs
+        case .ss: return ss
+        case .ds: return ds
+        }
+    }
+
+    private func physicalAddress(of address: EffectiveAddress) -> UInt32 {
+        AddressTranslator.physicalAddress(
+            segment: segmentValue(address.defaultSegment),
+            offset: address.offset
+        )
+    }
+
+    /// Word accesses are two byte accesses whose offsets wrap at 16 bits
+    /// within the segment, matching the 8086.
+    private func readMemoryWord(at address: EffectiveAddress) -> UInt16 {
+        let segment = segmentValue(address.defaultSegment)
+        let low = bus.readByte(at: AddressTranslator.physicalAddress(segment: segment, offset: address.offset))
+        let high = bus.readByte(at: AddressTranslator.physicalAddress(segment: segment, offset: address.offset &+ 1))
+        return UInt16(high) << 8 | UInt16(low)
+    }
+
+    private func writeMemoryWord(_ value: UInt16, at address: EffectiveAddress) {
+        let segment = segmentValue(address.defaultSegment)
+        bus.writeByte(UInt8(value & 0xFF), at: AddressTranslator.physicalAddress(segment: segment, offset: address.offset))
+        bus.writeByte(UInt8(value >> 8), at: AddressTranslator.physicalAddress(segment: segment, offset: address.offset &+ 1))
     }
 
     func dumpState() -> CPUStateSnapshot {

@@ -28,7 +28,7 @@ struct MovImmediateTests {
     func decodesByteMoves(opcode: UInt8, register: Register8) {
         let decoder = InstructionDecoder()
         var stream: [UInt8] = [0x42]
-        let instruction = decoder.decode(opcode: opcode) { stream.removeFirst() }
+        let instruction = decoder.decode(opcode: opcode, registers: RegisterFile()) { stream.removeFirst() }
         #expect(instruction == .movImmediateToRegister8(register, 0x42))
         #expect(stream.isEmpty)
     }
@@ -38,7 +38,7 @@ struct MovImmediateTests {
     func decodesWordMoves(opcode: UInt8, register: Register16) {
         let decoder = InstructionDecoder()
         var stream: [UInt8] = [0x34, 0x12]
-        let instruction = decoder.decode(opcode: opcode) { stream.removeFirst() }
+        let instruction = decoder.decode(opcode: opcode, registers: RegisterFile()) { stream.removeFirst() }
         #expect(instruction == .movImmediateToRegister16(register, 0x1234))
         #expect(stream.isEmpty)
     }

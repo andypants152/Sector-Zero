@@ -30,6 +30,9 @@ struct ModRM: Equatable, Sendable {
     let reg: UInt8
     /// The r/m-selected operand with any displacement already folded in.
     let operand: ModRMOperand
+    /// Documented 8086 effective-address time in clocks (0 for register
+    /// operands); instructions add this to their base execution cost.
+    let eaClocks: Int
 }
 
 /// Decodes ModR/M bytes and computes effective addresses.
@@ -46,7 +49,7 @@ struct ModRMDecoder {
         let rm = modRMByte & 0b111
 
         if mod == 0b11 {
-            return ModRM(mod: mod, reg: reg, operand: .register(rm))
+            return ModRM(mod: mod, reg: reg, operand: .register(rm), eaClocks: 0)
         }
 
         // mod=00 r/m=110 is the direct-address special case: no base or index,
@@ -57,7 +60,7 @@ struct ModRMDecoder {
             let high = nextByte()
             let address = UInt16(high) << 8 | UInt16(low)
             let effectiveAddress = EffectiveAddress(offset: address, defaultSegment: .ds)
-            return ModRM(mod: mod, reg: reg, operand: .memory(effectiveAddress))
+            return ModRM(mod: mod, reg: reg, operand: .memory(effectiveAddress), eaClocks: 6)
         }
 
         let base = baseAndIndex(rm: rm, registers: registers)
@@ -78,7 +81,24 @@ struct ModRMDecoder {
             offset: base.offset &+ displacement,
             defaultSegment: base.defaultSegment
         )
-        return ModRM(mod: mod, reg: reg, operand: .memory(effectiveAddress))
+        return ModRM(
+            mod: mod,
+            reg: reg,
+            operand: .memory(effectiveAddress),
+            eaClocks: effectiveAddressClocks(mod: mod, rm: rm)
+        )
+    }
+
+    /// Documented 8086 effective-address times: base or index only 5; direct
+    /// address 6; base+index 7 (BP+DI, BX+SI) or 8 (BP+SI, BX+DI);
+    /// displacement+base-or-index 9; displacement+base+index 11 or 12.
+    private func effectiveAddressClocks(mod: UInt8, rm: UInt8) -> Int {
+        let hasDisplacement = mod != 0b00
+        switch rm {
+        case 0b000, 0b011: return hasDisplacement ? 11 : 7  // BX+SI, BP+DI
+        case 0b001, 0b010: return hasDisplacement ? 12 : 8  // BX+DI, BP+SI
+        default:           return hasDisplacement ? 9 : 5   // single base or index
+        }
     }
 
     /// The base+index sum and default segment for a memory-form r/m encoding.

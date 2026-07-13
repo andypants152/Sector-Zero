@@ -36,7 +36,7 @@ final class Machine {
     func step() {
         guard !cpu.halted else { return }
         let opcode = cpu.fetch()
-        let instruction = decoder.decode(opcode: opcode, nextByte: cpu.fetch)
+        let instruction = decoder.decode(opcode: opcode, registers: cpu.registers, nextByte: cpu.fetch)
         let cycles = cpu.execute(instruction)
         clock.advance(by: cycles)
     }

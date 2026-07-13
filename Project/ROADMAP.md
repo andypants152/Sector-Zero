@@ -13,8 +13,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
-(MOV immediate → register), and M8 (ModR/M decoding) are complete and tested.
-The next six milestones are M9–M14 below.
+(MOV immediate → register), M8 (ModR/M decoding), and M9 (MOV r/m ↔ reg) are
+complete and tested. The next milestones are M10–M14 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -131,23 +131,15 @@ length. Nothing consumes it yet; segment-override prefixes remain a follow-up.
 
 ## Next six milestones
 
-### M9 — MOV r/m ↔ reg (0x88–0x8B)
-- **Goal:** First instructions to consume the M8 ModR/M machinery; first data
-  movement through memory.
-- **Build:** Decode and execute `88` (MOV r/m8, r8), `89` (MOV r/m16, r16),
-  `8A` (MOV r8, r/m8), `8B` (MOV r16, r/m16). Wire `ModRMDecoder` into
-  `InstructionDecoder` via the existing `nextByte` boundary. Resolve
-  `EffectiveAddress` → physical address using the *actual* DS/SS values through
-  `AddressTranslator`; memory word access is little-endian through the `Bus`.
-  Cycles: reg→reg **2**; memory forms use the documented base + EA time — start
-  with the manual's table (reg→mem 9+EA, mem→reg 8+EA) and a simple EA-cost
-  function; verify against a timing table.
-- **Don't:** Segment-override prefixes; MOV involving segment registers
-  (`8C`/`8E`); immediates to r/m (`C6`/`C7`).
-- **Tests:** all four opcode directions; reg↔reg for byte and word; memory
-  reads/writes land at segment:offset (seed DS/SS to non-zero values!);
-  little-endian word round-trip through memory; BP-based EA uses SS; flags
-  untouched; IP advances past ModR/M + displacement.
+### M9 — MOV r/m ↔ reg (0x88–0x8B) ✅
+All four directions decode through `ModRMDecoder` (now wired into
+`InstructionDecoder`, whose `decode` takes the register file for EA resolution)
+and execute through new CPU memory-operand helpers: physical address = actual
+segment value (DS, or SS for BP modes) via `AddressTranslator`; word access is
+little-endian with 16-bit offset wrap. Cycles: reg→reg 2, reg→mem 9+EA,
+mem→reg 8+EA, with the full documented EA-clock table carried on `ModRM`.
+`CPU8086.writeSegment(_:to:)` exists for tests and future `8E`/POP sreg.
+Still out: segment-override prefixes, `8C`/`8E`, `C6`/`C7`.
 
 ### M10 — ALU flag engine + ADD (0x00–0x03)
 - **Goal:** Correct CF/PF/AF/ZF/SF/OF computation — the make-or-break machinery
