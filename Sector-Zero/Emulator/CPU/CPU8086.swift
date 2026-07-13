@@ -132,24 +132,33 @@ final class CPU8086 {
                 return 8 + eaClocks
             }
         case .aluRegisterToRM8(let op, let source, let destination, let eaClocks):
-            // ALU r/m8, r8 — destination is read-modify-write when memory.
+            // ALU r/m8, r8 — a memory destination is read-modify-write
+            // (16+EA), except CMP which only reads (9+EA).
             let (result, arithmeticFlags) = perform8(op, readOperand8(destination), registers[source])
-            writeOperand8(result, to: destination)
+            if op.writesResult {
+                writeOperand8(result, to: destination)
+            }
             flags.applyArithmetic(arithmeticFlags)
-            return isRegister(destination) ? 3 : 16 + eaClocks
+            return isRegister(destination) ? 3 : (op.writesResult ? 16 : 9) + eaClocks
         case .aluRegisterToRM16(let op, let source, let destination, let eaClocks):
             let (result, arithmeticFlags) = perform16(op, readOperand16(destination), registers[source])
-            writeOperand16(result, to: destination)
+            if op.writesResult {
+                writeOperand16(result, to: destination)
+            }
             flags.applyArithmetic(arithmeticFlags)
-            return isRegister(destination) ? 3 : 16 + eaClocks
+            return isRegister(destination) ? 3 : (op.writesResult ? 16 : 9) + eaClocks
         case .aluRMToRegister8(let op, let destination, let source, let eaClocks):
             let (result, arithmeticFlags) = perform8(op, registers[destination], readOperand8(source))
-            registers[destination] = result
+            if op.writesResult {
+                registers[destination] = result
+            }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(source) ? 3 : 9 + eaClocks
         case .aluRMToRegister16(let op, let destination, let source, let eaClocks):
             let (result, arithmeticFlags) = perform16(op, registers[destination], readOperand16(source))
-            registers[destination] = result
+            if op.writesResult {
+                registers[destination] = result
+            }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(source) ? 3 : 9 + eaClocks
         case .unknown:
@@ -171,12 +180,14 @@ final class CPU8086 {
     private func perform8(_ op: ALUBinaryOp, _ a: UInt8, _ b: UInt8) -> (UInt8, ArithmeticFlags) {
         switch op {
         case .add: return ALU.add8(a, b)
+        case .sub, .cmp: return ALU.subtract8(a, b)
         }
     }
 
     private func perform16(_ op: ALUBinaryOp, _ a: UInt16, _ b: UInt16) -> (UInt16, ArithmeticFlags) {
         switch op {
         case .add: return ALU.add16(a, b)
+        case .sub, .cmp: return ALU.subtract16(a, b)
         }
     }
 

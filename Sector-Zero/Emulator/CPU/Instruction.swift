@@ -22,8 +22,15 @@ enum Instruction: Equatable {
     case unknown(UInt8)
 }
 
-/// A binary ALU operation decoded from an r/m↔reg opcode block. SUB and CMP
-/// join in milestone 11.
+/// A binary ALU operation decoded from an r/m↔reg opcode block. CMP computes
+/// like SUB but discards its result, updating only flags.
 enum ALUBinaryOp: Equatable, Sendable {
     case add
+    case sub
+    case cmp
+
+    /// Whether the operation writes its result back to the destination.
+    var writesResult: Bool {
+        self != .cmp
+    }
 }

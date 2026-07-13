@@ -44,6 +44,35 @@ enum ALU {
         return (result, flags)
     }
 
+    /// Subtraction flags: CF = borrow; AF = borrow into bit 3; OF = signed
+    /// overflow (operands of differing sign where the result's sign flipped
+    /// away from the minuend's).
+    static func subtract8(_ a: UInt8, _ b: UInt8) -> (result: UInt8, flags: ArithmeticFlags) {
+        let result = a &- b
+        let flags = ArithmeticFlags(
+            carry: a < b,
+            parity: hasEvenParity(result),
+            auxiliaryCarry: (a & 0xF) < (b & 0xF),
+            zero: result == 0,
+            sign: result & 0x80 != 0,
+            overflow: (a ^ b) & (a ^ result) & 0x80 != 0
+        )
+        return (result, flags)
+    }
+
+    static func subtract16(_ a: UInt16, _ b: UInt16) -> (result: UInt16, flags: ArithmeticFlags) {
+        let result = a &- b
+        let flags = ArithmeticFlags(
+            carry: a < b,
+            parity: hasEvenParity(UInt8(truncatingIfNeeded: result)),
+            auxiliaryCarry: (a & 0xF) < (b & 0xF),
+            zero: result == 0,
+            sign: result & 0x8000 != 0,
+            overflow: (a ^ b) & (a ^ result) & 0x8000 != 0
+        )
+        return (result, flags)
+    }
+
     private static func hasEvenParity(_ byte: UInt8) -> Bool {
         byte.nonzeroBitCount.isMultiple(of: 2)
     }

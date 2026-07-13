@@ -12,36 +12,43 @@ struct InstructionDecoder {
 
     func decode(opcode: UInt8, registers: RegisterFile, nextByte: () -> UInt8) -> Instruction {
         switch opcode {
-        case 0x00, 0x01, 0x02, 0x03:
-            // ADD r/m ↔ reg, same width/direction bit layout as MOV below.
+        case 0x00...0x03, 0x28...0x2B, 0x38...0x3B:
+            // ALU r/m ↔ reg blocks (ADD/SUB/CMP), same width/direction bit
+            // layout as MOV below; bits 5–3 of the opcode name the operation.
+            let op: ALUBinaryOp
+            switch opcode >> 3 {
+            case 0b00000: op = .add
+            case 0b00101: op = .sub
+            default:      op = .cmp
+            }
             let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
             let isWord = opcode & 0b01 != 0
             let regIsDestination = opcode & 0b10 != 0
             switch (isWord, regIsDestination) {
             case (false, false):
                 return .aluRegisterToRM8(
-                    op: .add,
+                    op: op,
                     source: Register8(rawValue: modRM.reg)!,
                     destination: modRM.operand,
                     eaClocks: modRM.eaClocks
                 )
             case (true, false):
                 return .aluRegisterToRM16(
-                    op: .add,
+                    op: op,
                     source: Register16(rawValue: modRM.reg)!,
                     destination: modRM.operand,
                     eaClocks: modRM.eaClocks
                 )
             case (false, true):
                 return .aluRMToRegister8(
-                    op: .add,
+                    op: op,
                     destination: Register8(rawValue: modRM.reg)!,
                     source: modRM.operand,
                     eaClocks: modRM.eaClocks
                 )
             case (true, true):
                 return .aluRMToRegister16(
-                    op: .add,
+                    op: op,
                     destination: Register16(rawValue: modRM.reg)!,
                     source: modRM.operand,
                     eaClocks: modRM.eaClocks

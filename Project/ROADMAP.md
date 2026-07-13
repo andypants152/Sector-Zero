@@ -13,9 +13,9 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
-(MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), and M10
-(ALU flag engine + ADD) are complete and tested. The next milestones are M11–M14
-below.
+(MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
+(ALU flag engine + ADD), and M11 (SUB/CMP) are complete and tested. The next
+milestones are M12–M14 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -151,17 +151,12 @@ only, OF signed overflow. `00`–`03` decode into generic `.aluRegisterToRM*` /
 extend the same enum in M11), executed through shared operand read/write
 helpers. Cycles: reg↔reg 3, mem→reg 9+EA, reg→mem 16+EA (read-modify-write).
 
-### M11 — SUB and CMP (0x28–0x2B, 0x38–0x3B)
-- **Goal:** Subtraction flags plus the first instruction that only sets flags —
-  the gateway to conditional jumps.
-- **Build:** `ALU.subtract` (CF = borrow; AF = borrow into bit 3; OF = signed
-  overflow of minuend−subtrahend; ZF/SF/PF as usual). `28`–`2B` write the
-  result; `38`–`3B` (CMP) compute identically but **discard the result**,
-  updating only flags. Same ModR/M plumbing and timings as ADD.
-- **Don't:** SBB; NEG; immediate forms (`2C`/`2D`, `3C`/`3D`, `80`–`83`).
-- **Tests:** borrow vectors (0x00−1: CF SF PF AF set; 0x80−1 byte: OF set);
-  equal-operands CMP sets ZF and writes nothing; CMP leaves both operands and
-  memory untouched; SUB writes to registers and memory correctly.
+### M11 — SUB and CMP (0x28–0x2B, 0x38–0x3B) ✅
+`ALU.subtract8/16` (CF = borrow, AF = borrow into bit 3, OF = signed overflow of
+minuend−subtrahend). `.sub` and `.cmp` extend `ALUBinaryOp`; CMP computes
+identically but `writesResult == false`, so nothing is written and its memory
+r/m-destination form costs 9+EA rather than SUB's read-modify-write 16+EA. The
+decoder's three ALU opcode blocks share one path keyed on opcode bits 5–3.
 
 ### M12 — Conditional jumps (0x70–0x7F) + JMP short (0xEB)
 - **Goal:** Control flow; the CPU can finally loop and branch on M10/M11 flags.

@@ -39,9 +39,11 @@ struct InstructionDecoderTests {
 
     @Test("Opcodes without operands decode without consuming bytes")
     func decodingConsumesNoOperandBytes() {
-        // ADD (00–03) and MOV (88–8B) pull ModR/M bytes; MOV imm (B0–BF)
-        // pulls immediates.
-        let operandOpcodes: Set<ClosedRange<UInt8>> = [0x00...0x03, 0x88...0x8B, 0xB0...0xBF]
+        // ADD/SUB/CMP (00–03, 28–2B, 38–3B) and MOV (88–8B) pull ModR/M
+        // bytes; MOV imm (B0–BF) pulls immediates.
+        let operandOpcodes: Set<ClosedRange<UInt8>> = [
+            0x00...0x03, 0x28...0x2B, 0x38...0x3B, 0x88...0x8B, 0xB0...0xBF,
+        ]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
             _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())
         }
