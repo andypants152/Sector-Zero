@@ -23,6 +23,10 @@ final class CPU8086 {
     /// fetched since reset. Exposed for inspection; not yet decoded or executed.
     private(set) var lastFetchedOpcode: UInt8?
 
+    /// True after executing HLT. A halted CPU performs no fetches; only reset
+    /// exits the state until interrupt-driven wake-from-halt exists.
+    private(set) var halted = false
+
     init(bus: Bus) {
         self.bus = bus
         reset()
@@ -52,6 +56,7 @@ final class CPU8086 {
         ip = 0
         flags = CPUFlags()
         lastFetchedOpcode = nil
+        halted = false
     }
 
     /// Fetches one opcode byte from the code stream at CS:IP through the bus and
@@ -75,16 +80,15 @@ final class CPU8086 {
     /// advanced IP past it. Unknown opcodes follow a no-op-and-advance policy
     /// (executed like NOP, at the same provisional 3-clock cost) so stepping
     /// through unimplemented code never wedges the machine; a trap mechanism
-    /// can replace this once interrupts exist. HLT decodes but does not halt
-    /// yet — the halted run-state lands in milestone 5.
+    /// can replace this once interrupts exist. HLT (2 clocks) puts the CPU
+    /// into the halted state, exited only by reset for now.
     func execute(_ instruction: Instruction) -> Int {
         switch instruction {
         case .nop:
             return 3
         case .hlt:
-            // Milestone 5 gives HLT its halted run-state; until then it is
-            // treated like an unknown opcode.
-            return 3
+            halted = true
+            return 2
         case .unknown:
             return 3
         }
@@ -106,7 +110,8 @@ final class CPU8086 {
             ss: ss,
             ip: ip,
             flags: flags,
-            lastFetchedOpcode: lastFetchedOpcode
+            lastFetchedOpcode: lastFetchedOpcode,
+            halted: halted
         )
     }
 }

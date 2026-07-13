@@ -16,6 +16,7 @@ struct CPUStateSnapshot: Equatable, Sendable {
     let ip: UInt16
     let flags: CPUFlags
     let lastFetchedOpcode: UInt8?
+    let halted: Bool
 
     /// Two-digit hex of the last fetched opcode, or "--" when nothing has been
     /// fetched since reset.

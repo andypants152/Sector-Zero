@@ -12,8 +12,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 ## Handoff context (read first)
 
 **Status:** M1 (authentic reset), M2 (instruction fetch), and M3 (instruction
-decoder), and M4 (execute NOP) are complete and tested. The next milestones are
-M5–M8 below.
+decoder), M4 (execute NOP), and M5 (HLT + run-state) are complete and tested. The
+next milestones are M6–M8 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -93,16 +93,13 @@ advance. **Unknown-opcode policy: no-op-and-advance** at the same provisional
 3-clock cost (never wedges; a trap can replace this once interrupts exist). HLT
 decodes but is executed as a no-op until M5 gives it a run-state.
 
-### M5 — HLT (0xF4) + CPU run-state
-- **Goal:** Give the CPU a halted state so a run loop can terminate.
-- **Build:** A `halted` run-state on `CPU8086`; executing `.hlt` sets it.
-  `Machine.step()` becomes a no-op while halted (no fetch). `reset()` clears it.
-  Surface `halted` in `MachineSnapshot`/inspector. Optionally add a minimal
-  `run()`/RUN control that steps until halt (bounded so tests can't hang).
-- **Don't:** Implement interrupt-driven wake-from-halt (`STI`/`CLI`) — halt is exited
-  only by reset for now; note this.
-- **Tests:** HLT sets halted; stepping while halted freezes IP/cycles; reset clears
-  halted; snapshot reflects it.
+### M5 — HLT (0xF4) + CPU run-state ✅
+`CPU8086.halted` is set by executing HLT (2 clocks); `Machine.step()` is a no-op
+while halted (no fetch, no cycles) and `reset()` clears the state — reset is the
+only exit until interrupt-driven wake-from-halt exists. `halted` is surfaced in
+`CPUStateSnapshot` and the inspector (STATE row: RUN/HALT). `Machine.run(maxSteps:)`
+steps until halt or the bound. A UI RUN control is still to be wired when the
+workspace grows one.
 
 ### M6 — Register file with byte + word access
 - **Goal:** Foundational operand storage — AX is AH:AL, etc. Nearly every future

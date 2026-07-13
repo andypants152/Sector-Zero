@@ -30,11 +30,24 @@ final class Machine {
 
     /// Advances the machine by a single instruction: fetch → decode → execute,
     /// then charges the instruction's clock cost to the execution clock.
+    ///
+    /// A halted CPU performs no fetch and accrues no cycles; only `reset()`
+    /// resumes execution until interrupt-driven wake-from-halt exists.
     func step() {
+        guard !cpu.halted else { return }
         let opcode = cpu.fetch()
         let instruction = decoder.decode(opcode: opcode, nextByte: cpu.fetch)
         let cycles = cpu.execute(instruction)
         clock.advance(by: cycles)
+    }
+
+    /// Steps repeatedly until the CPU halts or `maxSteps` instructions have
+    /// executed. The bound keeps runaway programs (and tests) from hanging.
+    func run(maxSteps: Int) {
+        for _ in 0..<maxSteps {
+            if cpu.halted { return }
+            step()
+        }
     }
 
     func tick() {
