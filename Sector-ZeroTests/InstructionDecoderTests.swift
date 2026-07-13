@@ -46,7 +46,7 @@ struct InstructionDecoderTests {
         let operandOpcodes: Set<ClosedRange<UInt8>> = [
             0x00...0x03, 0x28...0x2B, 0x38...0x3B, 0x70...0x7F,
             0x80...0x81, 0x83...0x83, 0x88...0x8B, 0xB0...0xBF,
-            0xE0...0xE3, 0xE8...0xE8, 0xEB...0xEB,
+            0xE0...0xE3, 0xE8...0xEB,
         ]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
             _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())

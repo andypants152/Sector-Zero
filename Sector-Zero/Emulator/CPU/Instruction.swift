@@ -29,6 +29,8 @@ enum Instruction: Equatable {
     case returnNear
     case jumpConditional(condition: JumpCondition, displacement: Int8)
     case jumpShort(displacement: Int8)
+    case jumpNear(displacement: Int16)
+    case jumpFar(offset: UInt16, segment: UInt16)
     case loop(condition: LoopCondition, displacement: Int8)
     case jumpIfCXZero(displacement: Int8)
     case unknown(UInt8)

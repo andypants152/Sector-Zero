@@ -217,6 +217,15 @@ final class CPU8086 {
         case .jumpShort(let displacement):
             ip = ip &+ UInt16(bitPattern: Int16(displacement))
             return 15
+        case .jumpNear(let displacement):
+            // IP already points past the disp16; branch relative with wrap.
+            ip = ip &+ UInt16(bitPattern: displacement)
+            return 15
+        case .jumpFar(let offset, let segment):
+            // Direct intersegment: load CS and IP together, no flags touched.
+            cs = segment
+            ip = offset
+            return 15
         case .loop(let condition, let displacement):
             // CX decrements unconditionally and without touching flags; the
             // branch tests the *new* CX (so entering with CX=0 wraps to

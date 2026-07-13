@@ -114,6 +114,21 @@ struct InstructionDecoder {
             let low = nextByte()
             let high = nextByte()
             return .callNearRelative(displacement: Int16(bitPattern: UInt16(high) << 8 | UInt16(low)))
+        case 0xE9:
+            // JMP near-relative: signed disp16, little-endian.
+            let low = nextByte()
+            let high = nextByte()
+            return .jumpNear(displacement: Int16(bitPattern: UInt16(high) << 8 | UInt16(low)))
+        case 0xEA:
+            // JMP far (direct intersegment): little-endian offset then segment.
+            let offsetLow = nextByte()
+            let offsetHigh = nextByte()
+            let segmentLow = nextByte()
+            let segmentHigh = nextByte()
+            return .jumpFar(
+                offset: UInt16(offsetHigh) << 8 | UInt16(offsetLow),
+                segment: UInt16(segmentHigh) << 8 | UInt16(segmentLow)
+            )
         case 0xEB:
             return .jumpShort(displacement: Int8(bitPattern: nextByte()))
         case 0x88, 0x89, 0x8A, 0x8B:

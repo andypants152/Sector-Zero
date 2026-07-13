@@ -11,10 +11,10 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M17 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M18 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms; ADD/SUB/CMP incl. immediates; conditional
-jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ). The next milestone is
-M18 below.
+jumps; PUSH/POP; CALL/RET near; INC/DEC; LOOP/JCXZ; JMP near/far). The next
+milestone is M19 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -189,20 +189,18 @@ countdown loops, flag transparency, both ZF gates each way, cycle splits,
 JCXZ taken/not-taken. Test-writing note: accumulator-immediate CMP (`3C`)
 doesn't exist until M20 — use `80 /7` in fixtures.
 
+### M18 — JMP near and far (0xE9, 0xEA) ✅
+`E9` JMP near: signed disp16 relative to the next instruction, 16-bit wrap.
+`EA` JMP far: little-endian offset then segment, loaded into IP and CS
+together (the first CS-changing instruction; `cs = segment` directly in
+`execute`). Both 15 clocks, no flags touched. Tested: near
+forward/backward/wrap, far load of CS:IP with the physical fetch address
+reflecting both, execution continuing at the far target, and the BIOS
+handoff shape (far jump from the reset segment down to low memory).
+
 ---
 
-## Next milestones (M18–M26)
-
-### M18 — JMP near and far (0xE9, 0xEA)
-- **Goal:** Unconditional 16-bit jumps, including the first cross-segment
-  control transfer (the reset vector itself is a far-jump target in real BIOSes).
-- **Build:** `E9` JMP near: signed disp16 relative to the next instruction,
-  16-bit wrap. `EA` JMP far: little-endian offset then segment; load IP and CS
-  atomically. Cycles: near 15, far 15 — verify.
-- **Don't:** JMP r/m (`FF /4`, `FF /5`).
-- **Tests:** near forward/backward/wrap; far jump lands at the new CS:IP and
-  the physical fetch address reflects both; a far jump back into a low segment
-  from the reset segment (the classic BIOS handoff shape).
+## Next milestones (M19–M26)
 
 ### M19 — Logical ALU: AND/OR/XOR (0x08–0x0B, 0x20–0x23, 0x30–0x33)
 - **Goal:** The bitwise half of the ALU, reusing the M10/M11 machinery.
