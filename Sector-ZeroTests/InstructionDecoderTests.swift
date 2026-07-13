@@ -39,12 +39,14 @@ struct InstructionDecoderTests {
 
     @Test("Opcodes without operands decode without consuming bytes")
     func decodingConsumesNoOperandBytes() {
-        // ADD/SUB/CMP (00–03, 28–2B, 38–3B) and MOV (88–8B) pull ModR/M
-        // bytes; MOV imm (B0–BF) pulls immediates; jumps (70–7F, EB) and
-        // CALL (E8) pull displacements.
+        // ADD/SUB/CMP (00–03, 28–2B, 38–3B), the immediate ALU group
+        // (80/81/83), and MOV (88–8B) pull ModR/M bytes; MOV imm (B0–BF) and
+        // the ALU group pull immediates; jumps (70–7F, EB) and CALL (E8)
+        // pull displacements.
         let operandOpcodes: Set<ClosedRange<UInt8>> = [
             0x00...0x03, 0x28...0x2B, 0x38...0x3B, 0x70...0x7F,
-            0x88...0x8B, 0xB0...0xBF, 0xE8...0xE8, 0xEB...0xEB,
+            0x80...0x81, 0x83...0x83, 0x88...0x8B, 0xB0...0xBF,
+            0xE8...0xE8, 0xEB...0xEB,
         ]
         for opcode in UInt8.min...UInt8.max where !operandOpcodes.contains(where: { $0.contains(opcode) }) {
             _ = decoder.decode(opcode: opcode, registers: RegisterFile(), nextByte: forbiddenReader())
@@ -67,8 +69,10 @@ struct InstructionDecoderTests {
     @Test("Decoding the same byte sequence twice yields the same instruction")
     func decodingIsDeterministic() {
         for opcode in UInt8.min...UInt8.max {
-            var firstStream: [UInt8] = [0x34, 0x12]
-            var secondStream: [UInt8] = [0x34, 0x12]
+            // Long enough for the longest decode (0x81 mod=00 r/m=110:
+            // ModR/M + disp16 + imm16 = 5 bytes).
+            var firstStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A]
+            var secondStream: [UInt8] = [0x34, 0x12, 0x56, 0x78, 0x9A]
             let first = decoder.decode(opcode: opcode, registers: RegisterFile()) { firstStream.removeFirst() }
             let second = decoder.decode(opcode: opcode, registers: RegisterFile()) { secondStream.removeFirst() }
             #expect(first == second)

@@ -161,6 +161,22 @@ final class CPU8086 {
             }
             flags.applyArithmetic(arithmeticFlags)
             return isRegister(source) ? 3 : 9 + eaClocks
+        case .aluImmediateToRM8(let op, let destination, let immediate, let eaClocks):
+            // ALU r/m, imm — register 4 clocks; a memory destination is
+            // read-modify-write (17+EA), except CMP which only reads (10+EA).
+            let (result, arithmeticFlags) = perform8(op, readOperand8(destination), immediate)
+            if op.writesResult {
+                writeOperand8(result, to: destination)
+            }
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 4 : (op.writesResult ? 17 : 10) + eaClocks
+        case .aluImmediateToRM16(let op, let destination, let immediate, let eaClocks):
+            let (result, arithmeticFlags) = perform16(op, readOperand16(destination), immediate)
+            if op.writesResult {
+                writeOperand16(result, to: destination)
+            }
+            flags.applyArithmetic(arithmeticFlags)
+            return isRegister(destination) ? 4 : (op.writesResult ? 17 : 10) + eaClocks
         case .pushRegister16(let register):
             // The register is read *after* SP moves, so PUSH SP stores the
             // decremented value — the documented 8086 quirk (80286+ store the

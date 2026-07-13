@@ -15,8 +15,8 @@ This document is a handoff brief so another contributor (human or AI) can take o
 decoder), M4 (execute NOP), M5 (HLT + run-state), M6 (register file), M7
 (MOV immediate → register), M8 (ModR/M decoding), M9 (MOV r/m ↔ reg), M10
 (ALU flag engine + ADD), M11 (SUB/CMP), M12 (conditional jumps), M13
-(PUSH/POP), and M14 (CALL/RET near) are complete and tested. The next
-milestone is M15 below.
+(PUSH/POP), M14 (CALL/RET near), and M15 (immediate ALU forms) are complete
+and tested. The next milestone is M16 below.
 
 **Architecture:** `Machine → CPU8086 → Bus → Memory → Devices`. The UI never touches
 the core directly — it renders an immutable `MachineSnapshot` published by the
@@ -184,18 +184,28 @@ the stack, nested calls unwinding in order, flag preservation, and the first
 end-to-end program (CALL a subroutine that ADDs, RET, HLT). Far CALL/RET
 (`9A`/`CB`), RET imm16 (`C2`), and CALL r/m (`FF /2`) deferred.
 
-### M15 — Immediate ALU forms (0x80–0x83)
-- **Goal:** ADD/SUB/CMP with immediate operands — the `80`/`81`/`83` ModR/M
-  group where bits 5–3 of the ModR/M byte select the operation.
-- **Build:** Decode the group via `ModRMDecoder` (reg field = op selector:
-  /0 ADD, /5 SUB, /7 CMP — leave the other five ops `.unknown`-style
-  no-op-and-advance or defer them cleanly), then the immediate: `80` imm8,
-  `81` imm16, `83` sign-extended imm8 → 16-bit. Reuse the M10/M11 ALU and
-  operand helpers. Cycles: reg 4, mem 17+EA (CMP mem 10+EA) — verify.
-- **Don't:** The logical ops of the group (OR/AND/XOR/ADC/SBB) unless the
-  enum extension is trivial; segment overrides; `82` (undocumented alias).
-- **Tests:** each op × reg/mem × width, `83` sign extension both directions,
-  flag parity with the register-form equivalents.
+### M15 — Immediate ALU forms (0x80, 0x81, 0x83) ✅
+The group decodes through `ModRMDecoder`; the ModR/M reg field selects the
+op (/0 ADD, /5 SUB, /7 CMP — the group's other five ops consume their bytes
+and no-op-and-advance until implemented). `80` imm8, `81` little-endian
+imm16, `83` sign-extended imm8 → 16-bit. Execution reuses the M10/M11 ALU
+and operand helpers. Cycles: reg 4, mem 17+EA, CMP mem 10+EA. Tested per
+op × reg/mem × width, `83` sign extension both directions, flag parity with
+register forms, and full IP advance. `82` (undocumented alias) left unknown.
+Lesson pinned: decoder tests must feed streams as long as the longest
+decode (a 2-byte stream trapped once `81` pulled 5 bytes).
+
+### M16 — INC/DEC reg16 (0x40–0x4F)
+- **Goal:** The one-byte increment/decrement block — pervasive in real code
+  and the natural companion to LOOP later.
+- **Build:** `40`–`47` INC reg16, `48`–`4F` DEC reg16 (low three bits index
+  the register). Flags: OF/SF/ZF/AF/PF update, **CF is untouched** — the
+  8086's deliberate INC/DEC quirk; route through the ALU with a
+  carry-preserving apply. Cycles: 3 (verify).
+- **Don't:** `FE`/`FF` r/m forms; INC/DEC of byte registers (those only
+  exist via `FE`).
+- **Tests:** all 16 encodings, wrap 0xFFFF→0 (ZF set, CF *unchanged*),
+  0x7FFF→0x8000 overflow, CF preservation both set and clear.
 
 ---
 

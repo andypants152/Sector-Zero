@@ -54,6 +54,35 @@ struct InstructionDecoder {
                     eaClocks: modRM.eaClocks
                 )
             }
+        case 0x80, 0x81, 0x83:
+            // Immediate ALU group: the ModR/M reg field selects the operation
+            // (/0 ADD, /5 SUB, /7 CMP). 0x80 takes imm8, 0x81 imm16, 0x83 a
+            // sign-extended imm8 into a 16-bit destination. The immediate is
+            // consumed even for the group's unimplemented operations so IP
+            // still lands on the next instruction (no-op-and-advance).
+            let modRM = modRMDecoder.decode(modRMByte: nextByte(), registers: registers, nextByte: nextByte)
+            let op: ALUBinaryOp?
+            switch modRM.reg {
+            case 0b000: op = .add
+            case 0b101: op = .sub
+            case 0b111: op = .cmp
+            default:    op = nil // OR/ADC/SBB/AND/XOR — later milestones
+            }
+            if opcode == 0x80 {
+                let immediate = nextByte()
+                guard let op else { return .unknown(opcode) }
+                return .aluImmediateToRM8(op: op, destination: modRM.operand, immediate: immediate, eaClocks: modRM.eaClocks)
+            }
+            let immediate: UInt16
+            if opcode == 0x81 {
+                let low = nextByte()
+                let high = nextByte()
+                immediate = UInt16(high) << 8 | UInt16(low)
+            } else {
+                immediate = UInt16(bitPattern: Int16(Int8(bitPattern: nextByte())))
+            }
+            guard let op else { return .unknown(opcode) }
+            return .aluImmediateToRM16(op: op, destination: modRM.operand, immediate: immediate, eaClocks: modRM.eaClocks)
         case 0x50...0x57:
             return .pushRegister16(Register16(rawValue: opcode & 0b111)!)
         case 0x58...0x5F:
