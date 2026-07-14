@@ -139,6 +139,32 @@ enum SectorZeroProjectStore {
         return updated
     }
 
+    /// Selects an existing package-local image for a drive. Unlike
+    /// `installDiskImage`, this never copies or rewrites the media file; it is
+    /// the operation used by the media library when the same image is reused.
+    static func assignStoredDiskImage(
+        at imageURL: URL,
+        to project: SectorZeroProject,
+        slot: ProjectDiskSlot
+    ) throws -> SectorZeroProject {
+        let candidateURL = imageURL.standardizedFileURL
+        let storeURL = project.diskImageURL.standardizedFileURL
+        guard candidateURL.deletingLastPathComponent() == storeURL,
+              FileManager.default.fileExists(atPath: candidateURL.path) else {
+            throw SectorZeroProjectStoreError.invalidProjectPackage(project.projectURL)
+        }
+
+        var updated = project
+        let path = "disk/\(candidateURL.lastPathComponent)"
+        switch slot {
+        case .floppyA: updated.metadata.diskImagePath = path
+        case .floppyB: updated.metadata.floppyBPath = path
+        case .hardDisk: updated.metadata.hardDiskPath = path
+        }
+        try save(updated)
+        return updated
+    }
+
     /// Copies media into the package without mounting it in a drive.
     @discardableResult
     static func storeDiskImage(

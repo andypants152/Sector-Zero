@@ -118,6 +118,32 @@ struct MachineCondition: Equatable, Sendable {
     let severity: Severity
 }
 
+/// Orders snapshots as they cross from the execution queue to the main actor.
+/// `Task` scheduling does not guarantee that independently enqueued presentation
+/// tasks arrive in the same order as their source slices, so accepting every
+/// matching run ID can otherwise make the UI move backward after a terminal
+/// snapshot has already been displayed.
+struct RunPresentationHandoff {
+    private(set) var activeRunID: UUID?
+    private var latestSequence = 0
+
+    mutating func begin(runID: UUID) {
+        activeRunID = runID
+        latestSequence = 0
+    }
+
+    mutating func accept(runID: UUID, sequence: Int) -> Bool {
+        guard activeRunID == runID, sequence > latestSequence else { return false }
+        latestSequence = sequence
+        return true
+    }
+
+    mutating func finish(runID: UUID) {
+        guard activeRunID == runID else { return }
+        activeRunID = nil
+    }
+}
+
 @MainActor
 @Observable
 final class SectorZeroWorkspace {
@@ -153,7 +179,7 @@ final class SectorZeroWorkspace {
     }
     private let runControl = MachineRunControl()
     private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
-    private var activeRunID: UUID?
+    private var presentationHandoff = RunPresentationHandoff()
     private let sliceInstructionLimit = 2_048
     private let sliceClockLimit: UInt64 = 100_000
 
@@ -270,7 +296,7 @@ final class SectorZeroWorkspace {
     func run() {
         guard !isRunning else { return }
         let runID = UUID()
-        activeRunID = runID
+        presentationHandoff.begin(runID: runID)
         isRunning = true
         lastRunStopReason = nil
         instructionTrace.removeAll(keepingCapacity: true)
@@ -282,6 +308,7 @@ final class SectorZeroWorkspace {
         let clockLimit = sliceClockLimit
         let breakpoints = breakpoints
         executionQueue.async { [weak self] in
+            var presentationSequence = 0
             while true {
                 guard self != nil else { return }
                 let sliceStart = Date.timeIntervalSinceReferenceDate
@@ -299,13 +326,17 @@ final class SectorZeroWorkspace {
                 case .instructionLimit:
                     let now = Date.timeIntervalSinceReferenceDate
                     if control.shouldPublish(at: now) {
+                        presentationSequence += 1
+                        let sequence = presentationSequence
                         Task { @MainActor [weak self] in
-                            self?.publish(result, for: runID)
+                            self?.publish(result, for: runID, sequence: sequence)
                         }
                     }
                 default:
+                    presentationSequence += 1
+                    let sequence = presentationSequence
                     Task { @MainActor [weak self] in
-                        self?.publish(result, for: runID)
+                        self?.publish(result, for: runID, sequence: sequence)
                     }
                     return
                 }
@@ -514,6 +545,32 @@ final class SectorZeroWorkspace {
         }
     }
 
+    /// Mounts a previously imported image without copying it again. This keeps
+    /// the media library authoritative and makes one package-local image
+    /// reusable in either floppy drive.
+    @discardableResult
+    func mountStoredFloppyDisk(at imageURL: URL, drive: UInt8) -> Bool {
+        guard !isRunning, drive < 2, let project = currentProject else { return false }
+        do {
+            let image = try Data(contentsOf: imageURL)
+            _ = try FloppyDiskGeometry.detect(byteCount: image.count)
+            let updatedProject = try SectorZeroProjectStore.assignStoredDiskImage(
+                at: imageURL, to: project, slot: drive == 0 ? .floppyA : .floppyB
+            )
+            let mountedURL = drive == 0
+                ? updatedProject.configuredDiskImageURL
+                : updatedProject.configuredFloppyBURL
+            try machine.mountFloppyDisk(image, drive: drive, fileURL: mountedURL)
+            currentProject = updatedProject
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     /// Adds a floppy to the package media store without changing either drive.
     @discardableResult
     func importFloppyToStore(from sourceURL: URL) -> Bool {
@@ -671,8 +728,8 @@ final class SectorZeroWorkspace {
         }
     }
 
-    private func publish(_ result: MachineRunSlice, for runID: UUID) {
-        guard activeRunID == runID else { return }
+    private func publish(_ result: MachineRunSlice, for runID: UUID, sequence: Int) {
+        guard presentationHandoff.accept(runID: runID, sequence: sequence) else { return }
         apply(result.snapshot)
         instructionTrace.append(contentsOf: result.trace)
         if instructionTrace.count > 4_096 {
@@ -681,7 +738,7 @@ final class SectorZeroWorkspace {
         guard result.stopReason != .instructionLimit else { return }
         lastRunStopReason = result.stopReason
         isRunning = false
-        activeRunID = nil
+        presentationHandoff.finish(runID: runID)
     }
 
     private func apply(_ snapshot: MachineSnapshot) {

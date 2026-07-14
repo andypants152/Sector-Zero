@@ -940,6 +940,43 @@ next gap.
 - **Pending gate:** Bounded DOS 2.0/4.0 `VER`/`DIR`/file-read, keyboard, timer,
   and reboot qualification using separately supplied media. No OS image is bundled.
 
+### M61 — Project storage library and media management ✅
+- **Goal:** Make project-contained firmware and removable media easy to inspect,
+  reuse, replace, and remove without exposing package internals or corrupting a
+  running machine.
+- **Build:** Add a storage-focused workspace surface for the project media store,
+  with clear drive assignment, import, mount, eject, deletion, and disk metadata.
+  Keep image copies and project configuration in `SectorZeroProjectStore`; the
+  workspace remains the sole coordinator that applies a storage change to the
+  machine and republishes its immutable snapshot.
+- **Don't:** Let a view mutate package files directly, delete a mounted image
+  without first ejecting it, or permit storage mutations while execution is live.
+- **Tests:** Preserve the existing project-storage, firmware, and workspace tests;
+  add focused coverage for drive reassignment, deleting mounted media, invalid
+  image rejection, persistence across reopen, and snapshot/UI consistency.
+- **Completed:** The Edit Machine surface provides a package-local floppy media
+  library with import, reusable drive-A/drive-B assignment, ejection, and safe
+  deletion. Selecting a stored image assigns and mounts its existing package
+  copy rather than silently copying it again. Storage mutations are disabled
+  while the machine runs; deleting mounted media first persists the ejection,
+  then removes the file and republishes the snapshot. Existing project-store
+  regression coverage retains independent drive assignment, persistence,
+  validation, and snapshot consistency, with a focused no-rewrite reuse test.
+
+### M62 — Run-state and presentation UX *(next)*
+- **Goal:** Make RUN, PAUSE, stepping, and display refresh feel reliable while
+  preserving deterministic emulation and a snapshot-only UI boundary.
+- **Build:** Keep execution on the dedicated queue and coalesce display updates by
+  refresh cadence. Sequence every queued handoff so an older slice cannot replace
+  a newer or terminal snapshot after crossing to the main actor. Surface clear
+  running, paused, halted, breakpoint, and fault states without coupling views to
+  the live machine.
+- **Don't:** Drive emulation from view redraws, publish live machine state, or
+  weaken the existing run-loop timing and pause tests to accommodate UI timing.
+- **Tests:** Retain the current RUN/PAUSE, throttle-interrupt, reset, speed-cap,
+  and refresh-preference tests. Add a presentation-handoff regression proving
+  out-of-order and post-completion slices are ignored.
+
 The intended dependency chain is now explicit:
 
 ```

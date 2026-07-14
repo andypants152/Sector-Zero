@@ -107,8 +107,8 @@ struct MachineEditorView: View {
             }
             Spacer()
             Menu("Insert") {
-                Button("Floppy A") { _ = workspace.configureFloppyDisk(from: imageURL, drive: 0) }
-                Button("Floppy B") { _ = workspace.configureFloppyDisk(from: imageURL, drive: 1) }
+                Button("Floppy A") { _ = workspace.mountStoredFloppyDisk(at: imageURL, drive: 0) }
+                Button("Floppy B") { _ = workspace.mountStoredFloppyDisk(at: imageURL, drive: 1) }
             }
             .disabled(workspace.isRunning)
             Button(role: .destructive) { imagePendingDeletion = imageURL } label: {

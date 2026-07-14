@@ -48,4 +48,23 @@ struct ProjectStorageControllerTests {
         #expect(project.configuredDiskImageURL == nil)
         #expect(try SectorZeroProjectStore.storedDiskImages(in: project).map(\.lastPathComponent) == [stored.lastPathComponent])
     }
+
+    @Test("A stored image can be assigned to a drive without rewriting its package copy")
+    func assignStoredMedia() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SectorZeroStoredAssignment-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let project = try SectorZeroProjectStore.createProject(named: "Media", in: root)
+        let image = try SectorZeroProjectStore.storeDiskImage(
+            Data(repeating: 0x5A, count: 1_474_560), named: "reuse.img", into: project
+        )
+        let timestamp = try image.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+
+        let assigned = try SectorZeroProjectStore.assignStoredDiskImage(at: image, to: project, slot: .floppyB)
+
+        #expect(assigned.configuredFloppyBURL == image)
+        #expect(try image.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == timestamp)
+    }
 }

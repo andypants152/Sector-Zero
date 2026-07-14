@@ -31,6 +31,25 @@ struct WorkspaceRunTests {
         return condition()
     }
 
+    @Test("Presentation handoff rejects out-of-order and completed run slices")
+    func presentationHandoffIsMonotonic() {
+        var handoff = RunPresentationHandoff()
+        let runID = UUID()
+        let nextRunID = UUID()
+
+        handoff.begin(runID: runID)
+        let acceptsNewerSlice = handoff.accept(runID: runID, sequence: 2)
+        let rejectsOlderSlice = handoff.accept(runID: runID, sequence: 1)
+        let rejectsOtherRun = handoff.accept(runID: nextRunID, sequence: 3)
+        #expect(acceptsNewerSlice)
+        #expect(!rejectsOlderSlice)
+        #expect(!rejectsOtherRun)
+
+        handoff.finish(runID: runID)
+        let rejectsCompletedRun = handoff.accept(runID: runID, sequence: 3)
+        #expect(!rejectsCompletedRun)
+    }
+
     @Test("RUN publishes a terminal slice snapshot and returns to idle")
     func runToHalt() async {
         let workspace = workspaceWithBytes([0x90, 0xF4])
