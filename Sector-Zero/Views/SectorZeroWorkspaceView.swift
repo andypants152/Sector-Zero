@@ -1,12 +1,15 @@
 import SwiftUI
 
-#if os(macOS)
-import AppKit
-#endif
-
 struct SectorZeroWorkspaceView: View {
     @Bindable var workspace: SectorZeroWorkspace
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var compactSheet: CompactSheet?
+    @State private var showsPadKeyboard = false
+
+    private enum CompactSheet: String, Identifiable {
+        case machines, inspector
+        var id: String { rawValue }
+    }
 
     var body: some View {
         Group {
@@ -16,7 +19,9 @@ struct SectorZeroWorkspaceView: View {
                 regularLayout
             }
         }
+        #if os(macOS)
         .frame(minWidth: 900, minHeight: 620)
+        #endif
         .background(Color.sectorWorkspace)
         .alert("Action Couldn’t Be Completed", isPresented: errorBinding) {
             Button("Dismiss") {
@@ -36,14 +41,211 @@ struct SectorZeroWorkspaceView: View {
     }
 
     private var compactLayout: some View {
-        VStack(spacing: 0) {
-            ProjectBrowserView(workspace: workspace, isCompact: true)
-                .frame(maxHeight: workspace.currentProject == nil ? .infinity : 270)
-            if workspace.currentProject != nil {
-                Divider().overlay(Color.sectorBorder)
-                workspaceContent
+        Group {
+            if workspace.currentProject == nil {
+                ProjectBrowserView(workspace: workspace, isCompact: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                compactRunScreen
             }
         }
+    }
+
+    // MARK: Compact (iPhone) run screen
+
+    private var compactRunScreen: some View {
+        VStack(spacing: 10) {
+            compactRunHeader
+            readinessBanner
+            compactDisplay
+            compactControlBar
+            MachineOnScreenKeyboardView(workspace: workspace)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(item: $compactSheet, content: compactSheetView)
+    }
+
+    private var compactRunHeader: some View {
+        HStack(spacing: 10) {
+            Button {
+                compactSheet = .machines
+            } label: {
+                Label("MACHINES", systemImage: "square.stack.3d.up.fill")
+            }
+            .buttonStyle(SectorToolbarButtonStyle())
+            .accessibilityIdentifier("compactMachinesButton")
+
+            Spacer(minLength: 6)
+
+            statusChip
+
+            Spacer(minLength: 6)
+
+            Menu {
+                compactOverflowMenu
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Color.sectorText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More machine controls")
+            .accessibilityIdentifier("compactOverflowMenu")
+        }
+        .frame(minHeight: 40)
+    }
+
+    @ViewBuilder
+    private var compactOverflowMenu: some View {
+        Button {
+            compactSheet = .inspector
+        } label: {
+            Label("Inspector", systemImage: "cpu")
+        }
+
+        Picker("Run Speed", selection: $workspace.runSpeedCap) {
+            ForEach(RunSpeedCap.allCases) { cap in
+                Text(cap.label).tag(cap)
+            }
+        }
+
+        Picker("Display Refresh", selection: $workspace.displayRefreshRate) {
+            ForEach(DisplayRefreshRate.allCases) { rate in
+                Text(rate.label).tag(rate)
+            }
+        }
+
+        Divider()
+
+        Button {
+            workspace.runBounded(maxInstructions: 2_048)
+        } label: {
+            Label("Run 2,048 Instructions", systemImage: "forward.frame")
+        }
+        .disabled(workspace.isRunning || !canExecute)
+
+        Button {
+            workspace.toggleBreakpointAtCurrentAddress()
+        } label: {
+            Label(
+                workspace.hasBreakpointAtCurrentAddress ? "Clear Breakpoint" : "Set Breakpoint",
+                systemImage: "smallcircle.filled.circle"
+            )
+        }
+        .disabled(workspace.isRunning || !canExecute)
+
+        Button {
+            PlatformClipboard.copy(workspace.exportedInstructionTrace)
+        } label: {
+            Label("Copy Trace", systemImage: "doc.on.clipboard")
+        }
+        .disabled(workspace.instructionTrace.isEmpty)
+    }
+
+    private var compactControlBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                workspace.resetMachine()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .accessibilityLabel("Reset")
+            }
+            .buttonStyle(SectorToolbarButtonStyle(height: 50))
+            .disabled(workspace.isRunning || !canExecute)
+            .accessibilityIdentifier("compactResetButton")
+
+            Button {
+                workspace.step()
+            } label: {
+                Label("STEP", systemImage: "forward.end.fill")
+            }
+            .buttonStyle(SectorToolbarButtonStyle(height: 50))
+            .disabled(workspace.isRunning || !canExecute)
+            .accessibilityIdentifier("compactStepButton")
+
+            Button {
+                workspace.toggleRunPause()
+            } label: {
+                Label(workspace.isRunning ? "PAUSE" : "RUN", systemImage: workspace.isRunning ? "pause.fill" : "play.fill")
+            }
+            .buttonStyle(SectorToolbarButtonStyle(tint: .sectorRun, isProminent: true, height: 50, expands: true))
+            .disabled(!canExecute)
+            .accessibilityIdentifier("compactRunButton")
+        }
+    }
+
+    private var compactDisplay: some View {
+        ZStack {
+            Color.black.opacity(0.76)
+            CRTMetalView(
+                video: workspace.machineSnapshot.video,
+                preferredFramesPerSecond: workspace.displayRefreshRate.rawValue
+            )
+            .padding(8)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.sectorStrongBorder.opacity(0.5), lineWidth: 1)
+                .padding(6)
+                .allowsHitTesting(false)
+        }
+        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .layoutPriority(1)
+        .sectorCard()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Emulated CGA display")
+    }
+
+    @ViewBuilder
+    private func compactSheetView(_ sheet: CompactSheet) -> some View {
+        switch sheet {
+        case .machines:
+            compactSheetContainer(title: "Machines") {
+                ProjectBrowserView(workspace: workspace, isCompact: true)
+            }
+            .onChange(of: workspace.currentProject?.projectURL) { _, _ in
+                compactSheet = nil
+            }
+        case .inspector:
+            compactSheetContainer(title: "Inspector") {
+                MachineSidebarView(workspace: workspace)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func compactSheetContainer<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.sectorText)
+                Spacer(minLength: 0)
+                Button {
+                    compactSheet = nil
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.sectorRun)
+                }
+                .accessibilityIdentifier("compactSheetDoneButton")
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 52)
+
+            Divider().overlay(Color.sectorBorder)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.sectorWorkspace)
     }
 
     private var workspaceContent: some View {
@@ -55,6 +257,11 @@ struct SectorZeroWorkspaceView: View {
             } else {
                 readinessBanner
                 emulatorContent
+                #if os(iOS)
+                if showsPadKeyboard {
+                    MachineOnScreenKeyboardView(workspace: workspace)
+                }
+                #endif
             }
 
             statusBar
@@ -93,6 +300,10 @@ struct SectorZeroWorkspaceView: View {
     private var executionControls: some View {
         HStack(spacing: 8) {
             speedPicker
+            displayRefreshRatePicker
+            #if os(iOS)
+            padKeyboardToggle
+            #endif
 
             HStack(spacing: 4) {
                 breakpointButton
@@ -154,6 +365,35 @@ struct SectorZeroWorkspaceView: View {
         .accessibilityIdentifier("runSpeedPicker")
     }
 
+    private var displayRefreshRatePicker: some View {
+        Menu {
+            Picker("Display Refresh Rate", selection: $workspace.displayRefreshRate) {
+                ForEach(DisplayRefreshRate.allCases) { rate in
+                    Text(rate.label).tag(rate)
+                }
+            }
+        } label: {
+            Label(workspace.displayRefreshRate.label, systemImage: "display")
+        }
+        .menuStyle(.button)
+        .buttonStyle(SectorToolbarButtonStyle())
+        .help("CRT presentation refresh rate: \(workspace.displayRefreshRate.label)")
+        .accessibilityIdentifier("displayRefreshRatePicker")
+    }
+
+    #if os(iOS)
+    private var padKeyboardToggle: some View {
+        Button {
+            showsPadKeyboard.toggle()
+        } label: {
+            Label("KEYS", systemImage: "keyboard")
+        }
+        .buttonStyle(SectorToolbarButtonStyle(tint: showsPadKeyboard ? .sectorRun : nil))
+        .help("Show or hide the on-screen keyboard")
+        .accessibilityIdentifier("padKeyboardToggle")
+    }
+    #endif
+
     private var runPauseButton: some View {
         Button {
             workspace.toggleRunPause()
@@ -193,10 +433,7 @@ struct SectorZeroWorkspaceView: View {
 
     private var traceButton: some View {
         Button {
-            #if os(macOS)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(workspace.exportedInstructionTrace, forType: .string)
-            #endif
+            PlatformClipboard.copy(workspace.exportedInstructionTrace)
         } label: {
             Image(systemName: "doc.on.clipboard")
                 .frame(width: 13)
@@ -288,7 +525,10 @@ struct SectorZeroWorkspaceView: View {
 
             ZStack {
                 Color.black.opacity(0.76)
-                CRTMetalView(video: workspace.machineSnapshot.video)
+                CRTMetalView(
+                    video: workspace.machineSnapshot.video,
+                    preferredFramesPerSecond: workspace.displayRefreshRate.rawValue
+                )
                     .padding(12)
             }
             .overlay {

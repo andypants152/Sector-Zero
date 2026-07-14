@@ -9,6 +9,9 @@ struct MachineSidebarView: View {
     }
 
     @Bindable var workspace: SectorZeroWorkspace
+    #if !os(macOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @State private var mode: Mode = .inspect
 
     var body: some View {
@@ -31,7 +34,11 @@ struct MachineSidebarView: View {
                 MachineExplanationView(explanation: explanation)
             }
         }
+        #if os(macOS)
         .frame(width: 252)
+        #else
+        .frame(width: horizontalSizeClass == .regular ? 252 : nil)
+        #endif
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .sectorCard()
         .accessibilityElement(children: .contain)

@@ -112,4 +112,16 @@ struct WorkspaceRunTests {
         #expect(reloaded.runSpeedCap == .khz500)
         #expect(reloaded.runSpeedCap.cyclesPerSecond == 500_000)
     }
+
+    @Test("Display refresh rate defaults to 60 Hz and persists")
+    func displayRefreshRatePersists() {
+        let defaults = isolatedDefaults()
+        let workspace = SectorZeroWorkspace(userDefaults: defaults)
+
+        #expect(workspace.displayRefreshRate == .fps60)
+        workspace.displayRefreshRate = .fps120
+
+        let reloaded = SectorZeroWorkspace(userDefaults: defaults)
+        #expect(reloaded.displayRefreshRate == .fps120)
+    }
 }

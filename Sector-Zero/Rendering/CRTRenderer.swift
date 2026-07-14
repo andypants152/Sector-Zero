@@ -11,7 +11,8 @@ import MetalKit
 import QuartzCore
 
 final class CRTRenderer: NSObject, MTKViewDelegate {
-    typealias FrameProvider = (FrameBuffer, TimeInterval) -> Void
+    /// Returns true when CPU-composed text pixels changed and need uploading.
+    typealias FrameProvider = (FrameBuffer, TimeInterval) -> Bool
 
     private struct Uniforms {
         var viewportSize: SIMD2<Float>
@@ -88,8 +89,9 @@ final class CRTRenderer: NSObject, MTKViewDelegate {
 
     func draw(in view: MTKView) {
         let elapsedTime = CACurrentMediaTime() - startTime
-        frameProvider?(frameBuffer, elapsedTime)
-        uploadFrameBuffer()
+        if frameProvider?(frameBuffer, elapsedTime) ?? true {
+            uploadFrameBuffer()
+        }
 
         guard let drawable = view.currentDrawable,
               let renderPassDescriptor = view.currentRenderPassDescriptor,

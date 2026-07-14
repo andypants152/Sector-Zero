@@ -68,6 +68,8 @@ struct SectorToolbarButtonStyle: ButtonStyle {
 
     var tint: Color?
     var isProminent = false
+    var height: CGFloat = 32
+    var expands = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -75,7 +77,8 @@ struct SectorToolbarButtonStyle: ButtonStyle {
             .tracking(0.7)
             .foregroundStyle(tint ?? Color.sectorText)
             .padding(.horizontal, 12)
-            .frame(height: 32)
+            .frame(maxWidth: expands ? .infinity : nil)
+            .frame(height: height)
             .background {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(backgroundColor(configuration: configuration))

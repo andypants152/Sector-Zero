@@ -5,13 +5,22 @@ private final class MachineRunControl: @unchecked Sendable {
     private let lock = NSLock()
     nonisolated(unsafe) private var pauseRequested = false
     nonisolated(unsafe) private var runSpeedCyclesPerSecond: Double?
+    nonisolated(unsafe) private var presentationFPS = 60
+    nonisolated(unsafe) private var lastPublicationTime: TimeInterval = 0
 
     nonisolated func begin() {
-        lock.withLock { pauseRequested = false }
+        lock.withLock {
+            pauseRequested = false
+            lastPublicationTime = 0
+        }
     }
 
     nonisolated func setRunSpeedCap(_ cap: RunSpeedCap) {
         lock.withLock { runSpeedCyclesPerSecond = cap.cyclesPerSecond }
+    }
+
+    nonisolated func setPresentationFPS(_ fps: Int) {
+        lock.withLock { presentationFPS = fps }
     }
 
     nonisolated func currentRunSpeedCyclesPerSecond() -> Double? {
@@ -24,6 +33,17 @@ private final class MachineRunControl: @unchecked Sendable {
 
     nonisolated func shouldPause() -> Bool {
         lock.withLock { pauseRequested }
+    }
+
+    /// Coalesces UI work without slowing the emulated machine. The final
+    /// result of a run is always published, regardless of this cadence.
+    nonisolated func shouldPublish(at time: TimeInterval) -> Bool {
+        lock.withLock {
+            let interval = 1.0 / Double(presentationFPS)
+            guard time - lastPublicationTime >= interval else { return false }
+            lastPublicationTime = time
+            return true
+        }
     }
 }
 
@@ -67,6 +87,18 @@ enum RunSpeedCap: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// The presentation cadence is deliberately independent of emulation speed.
+/// Higher settings keep the CRT shader animation smooth without making the
+/// virtual CPU run any faster.
+enum DisplayRefreshRate: Int, CaseIterable, Identifiable, Sendable {
+    case fps30 = 30
+    case fps60 = 60
+    case fps120 = 120
+
+    nonisolated var id: Int { rawValue }
+    nonisolated var label: String { "\(rawValue) Hz" }
+}
+
 /// A display-ready summary of the machine's condition, derived from run
 /// state, the latest snapshot, and the last stop reason. Views map the
 /// severity to a status hue; the label is shown verbatim.
@@ -93,6 +125,7 @@ final class SectorZeroWorkspace {
     private static let builtInFirmwareResourceExtension = "bin"
     private let recentProjectsKey = "SectorZero.RecentProjects"
     private let runSpeedCapKey = "SectorZero.RunSpeedCap"
+    private let displayRefreshRateKey = "SectorZero.DisplayRefreshRate"
     private let maximumRecentProjects = 8
     private let userDefaults: UserDefaults
 
@@ -112,6 +145,12 @@ final class SectorZeroWorkspace {
             userDefaults.set(runSpeedCap.rawValue, forKey: runSpeedCapKey)
         }
     }
+    var displayRefreshRate: DisplayRefreshRate = .fps60 {
+        didSet {
+            runControl.setPresentationFPS(displayRefreshRate.rawValue)
+            userDefaults.set(displayRefreshRate.rawValue, forKey: displayRefreshRateKey)
+        }
+    }
     private let runControl = MachineRunControl()
     private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
     private var activeRunID: UUID?
@@ -124,8 +163,10 @@ final class SectorZeroWorkspace {
         self.userDefaults = userDefaults
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
+        self.displayRefreshRate = Self.loadDisplayRefreshRate(key: displayRefreshRateKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
         self.runControl.setRunSpeedCap(runSpeedCap)
+        self.runControl.setPresentationFPS(displayRefreshRate.rawValue)
     }
 
     init(machine: Machine, userDefaults: UserDefaults = .standard) {
@@ -133,8 +174,10 @@ final class SectorZeroWorkspace {
         self.userDefaults = userDefaults
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
+        self.displayRefreshRate = Self.loadDisplayRefreshRate(key: displayRefreshRateKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
         self.runControl.setRunSpeedCap(runSpeedCap)
+        self.runControl.setPresentationFPS(displayRefreshRate.rawValue)
     }
 
     /// Advances the emulated machine by one instruction step and republishes the
@@ -246,18 +289,25 @@ final class SectorZeroWorkspace {
                     maxInstructions: sliceLimit,
                     maxClocks: clockLimit,
                     breakpoints: breakpoints,
-                    traceLimit: sliceLimit,
+                    traceLimit: 0,
                     haltPolicy: .advanceToInterrupt
                 ) {
                     control.shouldPause()
                 }
                 Self.throttle(result.elapsedClocks, startedAt: sliceStart, control: control)
-                Task { @MainActor [weak self] in
-                    self?.publish(result, for: runID)
-                }
                 switch result.stopReason {
-                case .instructionLimit: continue
-                default: return
+                case .instructionLimit:
+                    let now = Date.timeIntervalSinceReferenceDate
+                    if control.shouldPublish(at: now) {
+                        Task { @MainActor [weak self] in
+                            self?.publish(result, for: runID)
+                        }
+                    }
+                default:
+                    Task { @MainActor [weak self] in
+                        self?.publish(result, for: runID)
+                    }
+                    return
                 }
             }
         }
@@ -344,12 +394,18 @@ final class SectorZeroWorkspace {
     /// the XT keyboard's own repeat stream. Unmapped keys are ignored.
     func handleHostKey(down: Bool, keyCode: UInt16, isRepeat: Bool = false) {
         guard let makeCode = PCKeyMap.makeCode(forMacKeyCode: keyCode) else { return }
+        pressXTKey(makeCode, down: down)
+    }
+
+    /// Posts one XT key transition to the machine by make code. Shared by the
+    /// macOS hardware keyboard (`handleHostKey`) and the iOS on-screen
+    /// keyboard. Only keys this workspace pressed emit a break code, so the up
+    /// half of a filtered host chord (⌘R) never leaks into the guest.
+    func pressXTKey(_ makeCode: UInt8, down: Bool) {
         if down {
             pressedScanCodes.insert(makeCode)
             machine.postScanCode(makeCode)
         } else {
-            // Only keys this workspace pressed get a break code; the up half
-            // of a filtered host chord (⌘R) must not leak into the guest.
             guard pressedScanCodes.remove(makeCode) != nil else { return }
             machine.postScanCode(makeCode | 0x80)
         }
@@ -780,6 +836,14 @@ final class SectorZeroWorkspace {
         }
 
         return cap
+    }
+
+    private static func loadDisplayRefreshRate(key: String, from userDefaults: UserDefaults) -> DisplayRefreshRate {
+        guard let rawValue = userDefaults.object(forKey: key) as? Int,
+              let rate = DisplayRefreshRate(rawValue: rawValue) else {
+            return .fps60
+        }
+        return rate
     }
 
     private static let encoder: JSONEncoder = {

@@ -2,6 +2,8 @@ import SwiftUI
 
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 struct NewProjectSheet: View {
@@ -20,7 +22,9 @@ struct NewProjectSheet: View {
             Divider().overlay(Color.sectorBorder)
             actions
         }
+        #if os(macOS)
         .frame(width: 500)
+        #endif
         .background(Color.sectorWorkspace)
         .onAppear {
             isNameFocused = true
@@ -83,6 +87,7 @@ struct NewProjectSheet: View {
                         .font(.system(size: 14))
                         .foregroundStyle(Color.sectorHeading)
                     VStack(alignment: .leading, spacing: 2) {
+                        #if os(macOS)
                         Text(destinationFolderURL?.lastPathComponent ?? "No folder selected")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.sectorText)
@@ -91,6 +96,14 @@ struct NewProjectSheet: View {
                             .foregroundStyle(Color.sectorMutedText)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                        #else
+                        Text(deviceLocationName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.sectorText)
+                        Text("Saved in Sector Zero’s Documents")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.sectorMutedText)
+                        #endif
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -189,6 +202,12 @@ struct NewProjectSheet: View {
     private static var defaultDestinationFolderURL: URL? {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
     }
+
+    #if os(iOS)
+    private var deviceLocationName: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? "On My iPad" : "On My iPhone"
+    }
+    #endif
 }
 
 #Preview {
