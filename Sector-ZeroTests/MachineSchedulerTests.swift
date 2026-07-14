@@ -27,6 +27,37 @@ struct MachineSchedulerTests {
         return machine
     }
 
+    private func timerWakeMachine() -> Machine {
+        let machine = Machine()
+        // Reset vector -> 0050:0000. Main enables interrupts, idles in HLT,
+        // proves execution resumed, then disables interrupts and halts for good.
+        try! machine.bus.loadBytes([0xEA, 0x00, 0x00, 0x50, 0x00], at: resetVector)
+        try! machine.bus.loadBytes([
+            0xFB,                   // STI
+            0xF4,                   // HLT until IRQ0
+            0xBB, 0x34, 0x12,       // MOV BX,1234h
+            0xFA,                   // CLI
+            0xF4,                   // terminal HLT
+        ], at: 0x00500)
+        // IRQ0 vector 20h -> 0060:0000; acknowledge the PIC and return.
+        try! machine.bus.loadBytes([0x00, 0x00, 0x60, 0x00], at: 0x20 * 4)
+        try! machine.bus.loadBytes([0xB0, 0x20, 0xE6, 0x20, 0xCF], at: 0x00600)
+
+        // XT-compatible master PIC with only IRQ0 unmasked.
+        machine.bus.writeIOByte(0x11, at: 0x20)
+        machine.bus.writeIOByte(0x20, at: 0x21)
+        machine.bus.writeIOByte(0x00, at: 0x21)
+        machine.bus.writeIOByte(0x01, at: 0x21)
+        machine.bus.writeIOByte(0xFE, at: 0x21)
+        // PIT channel 0, mode 2, reload 4096. The first timer edge is far
+        // enough away that the CPU reaches HLT before IRQ0 becomes pending,
+        // and the following period is long enough for the handler to IRET.
+        machine.bus.writeIOByte(0x34, at: 0x43)
+        machine.bus.writeIOByte(0x00, at: 0x40)
+        machine.bus.writeIOByte(0x10, at: 0x40)
+        return machine
+    }
+
     @Test("Step reports elapsed clocks and advances each device by the same amount")
     func stepDrivesDevices() {
         let machine = machineWithBytes([0x90, 0xF4])
@@ -112,6 +143,50 @@ struct MachineSchedulerTests {
         #expect(result.elapsedClocks == 50)
         #expect(device.totalClocks == 52)
         #expect(!result.snapshot.cpu.halted)
+    }
+
+    @Test("Terminal halt policy leaves an enabled future timer interrupt pending in time")
+    func terminalHaltPolicy() {
+        let machine = timerWakeMachine()
+
+        let result = machine.runSlice(maxInstructions: 50)
+
+        #expect(result.stopReason == .halted)
+        #expect(result.snapshot.cpu.halted)
+        #expect(result.snapshot.cpu.bx == 0)
+        #expect(result.elapsedClocks == 19)
+    }
+
+    @Test("Interruptible halt policy advances PIT time and wakes through IRQ0")
+    func timerWakesHalt() {
+        let machine = timerWakeMachine()
+
+        let result = machine.runSlice(
+            maxInstructions: 50,
+            haltPolicy: .advanceToInterrupt
+        )
+
+        #expect(result.stopReason == .halted)
+        #expect(result.snapshot.cpu.halted)
+        #expect(result.snapshot.cpu.bx == 0x1234)
+        #expect(result.snapshot.interruptController.inService == 0)
+        #expect(result.elapsedClocks > 19)
+    }
+
+    @Test("Clock bound yields after a large halted-time jump for host pacing")
+    func haltedIdleClockBound() {
+        let machine = timerWakeMachine()
+
+        let result = machine.runSlice(
+            maxInstructions: 50,
+            maxClocks: 20,
+            haltPolicy: .advanceToInterrupt
+        )
+
+        #expect(result.stopReason == .instructionLimit)
+        #expect(result.snapshot.cpu.halted)
+        #expect(result.snapshot.cpu.bx == 0)
+        #expect(result.elapsedClocks == 16_384)
     }
 
     @Test("A blocked WAIT ends a slice instead of spinning")

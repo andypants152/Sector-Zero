@@ -116,6 +116,7 @@ final class SectorZeroWorkspace {
     private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
     private var activeRunID: UUID?
     private let sliceInstructionLimit = 2_048
+    private let sliceClockLimit: UInt64 = 100_000
 
     init(userDefaults: UserDefaults = .standard) {
         let machine = Machine()
@@ -235,6 +236,7 @@ final class SectorZeroWorkspace {
         let machine = machine
         let control = runControl
         let sliceLimit = sliceInstructionLimit
+        let clockLimit = sliceClockLimit
         let breakpoints = breakpoints
         executionQueue.async { [weak self] in
             while true {
@@ -242,8 +244,10 @@ final class SectorZeroWorkspace {
                 let sliceStart = Date.timeIntervalSinceReferenceDate
                 let result = machine.runSlice(
                     maxInstructions: sliceLimit,
+                    maxClocks: clockLimit,
                     breakpoints: breakpoints,
-                    traceLimit: sliceLimit
+                    traceLimit: sliceLimit,
+                    haltPolicy: .advanceToInterrupt
                 ) {
                     control.shouldPause()
                 }
@@ -294,7 +298,8 @@ final class SectorZeroWorkspace {
         let result = machine.runSlice(
             maxInstructions: maxInstructions,
             breakpoints: breakpoints,
-            traceLimit: maxInstructions
+            traceLimit: maxInstructions,
+            haltPolicy: .advanceToInterrupt
         )
         instructionTrace = result.trace
         lastRunStopReason = result.stopReason

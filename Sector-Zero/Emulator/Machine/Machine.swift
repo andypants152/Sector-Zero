@@ -44,6 +44,15 @@ enum MachineRunStopReason: Equatable, Sendable {
     case fault(CPUFault)
 }
 
+enum MachineHaltPolicy: Equatable, Sendable {
+    /// A deliberate HLT ends the slice. Diagnostic firmware uses this policy
+    /// so a final halt remains an authoritative completion condition.
+    case stop
+    /// If the enabled PIT/PIC path can eventually wake HLT, advance device
+    /// time directly to its next transition and continue at that boundary.
+    case advanceToInterrupt
+}
+
 struct MachineRunSlice: Equatable, Sendable {
     let executedBoundaries: Int
     let elapsedClocks: UInt64
@@ -326,8 +335,10 @@ final class Machine {
     /// instruction/interrupt boundary, independent of host wall-clock time.
     func runSlice(
         maxInstructions: Int,
+        maxClocks: UInt64? = nil,
         breakpoints: Set<UInt32> = [],
         traceLimit: Int = 0,
+        haltPolicy: MachineHaltPolicy = .stop,
         shouldPause: () -> Bool = { false }
     ) -> MachineRunSlice {
         precondition(maxInstructions >= 0, "run-slice bound cannot be negative")
@@ -338,7 +349,8 @@ final class Machine {
         var trace: [InstructionTraceEntry] = []
         trace.reserveCapacity(min(maxInstructions, traceLimit))
 
-        while executedBoundaries < maxInstructions {
+        while executedBoundaries < maxInstructions,
+              maxClocks.map({ cycleCount - startClocks < $0 }) ?? true {
             // Drain before the halt check so a keystroke can raise IRQ1 and
             // wake a halted CPU inside a running slice.
             drainHostInput()
@@ -359,8 +371,14 @@ final class Machine {
                 break
             }
             if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
-                stopReason = .halted
-                break
+                if let idleClocks = haltedIdleClocks(for: haltPolicy) {
+                    advanceClock(by: idleClocks)
+                    executedBoundaries += 1
+                    continue
+                } else {
+                    stopReason = .halted
+                    break
+                }
             }
             if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .waitingForCoprocessor
@@ -381,7 +399,8 @@ final class Machine {
                 stopReason = .memoryMapViolation(violation)
             } else if let fault = cpu.fault {
                 stopReason = .fault(fault)
-            } else if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
+            } else if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA,
+                      haltedIdleClocks(for: haltPolicy) == nil {
                 stopReason = .halted
             } else if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .waitingForCoprocessor
@@ -439,6 +458,25 @@ final class Machine {
 
     private var hasServiceableFloppyDMA: Bool {
         floppyController.dmaRequestActive && dmaController.canServiceChannel2
+    }
+
+    /// Returns the deterministic clock jump that can make progress while HLT
+    /// is active. A masked timer, IF=0, an IRQ0 already in service, or a stopped
+    /// PIT is genuinely unable to wake the CPU and therefore remains terminal.
+    private func haltedIdleClocks(for policy: MachineHaltPolicy) -> Int? {
+        guard policy == .advanceToInterrupt,
+              cpu.flags[.interruptEnable],
+              maskableShadow == 0,
+              stackSegmentShadow == 0 else {
+            return nil
+        }
+        let pic = interruptController.snapshot
+        guard pic.initialized,
+              pic.interruptMask & 0x01 == 0,
+              pic.inService & 0x01 == 0 else {
+            return nil
+        }
+        return intervalTimer.clocksUntilChannel0OutputTransition
     }
 
     private func serviceFloppyDMAIfRequested() {

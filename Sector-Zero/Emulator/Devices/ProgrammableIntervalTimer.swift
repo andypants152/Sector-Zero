@@ -159,6 +159,22 @@ final class ProgrammableIntervalTimer: ClockedDevice, IOPortDevice {
             return output != oldOutput
         }
 
+        /// Number of PIT input ticks until OUT next changes. The machine uses
+        /// this to advance a halted CPU directly to the next possible timer
+        /// event instead of freezing device time or busy-spinning one clock at
+        /// a time.
+        var ticksUntilOutputTransition: Int? {
+            guard running, gate else { return nil }
+            return switch mode {
+            case .interruptOnTerminalCount:
+                output ? nil : max(currentCount, 1)
+            case .rateGenerator:
+                output ? max(currentCount, 1) : 1
+            case .squareWave:
+                max(squarePhaseTicks, 1)
+            }
+        }
+
         private var encodedCount: UInt16 {
             UInt16(truncatingIfNeeded: currentCount == 65_536 ? 0 : currentCount)
         }
@@ -235,6 +251,13 @@ final class ProgrammableIntervalTimer: ClockedDevice, IOPortDevice {
             channel2SpeakerEnabled: channel2SpeakerEnabled,
             channel2SpeakerOutput: channel2SpeakerEnabled && channels[2].output
         )
+    }
+
+    /// CPU clocks until channel 0 next changes OUT, including any partial PIT
+    /// input-clock remainder already accumulated by prior CPU execution.
+    var clocksUntilChannel0OutputTransition: Int? {
+        guard let ticks = channels[0].ticksUntilOutputTransition else { return nil }
+        return max(1, ticks * Self.cpuClocksPerInputTick - cpuClockRemainder)
     }
 
     func reset() {
