@@ -38,6 +38,20 @@ around an Intel 8086 core. It is not a cycle-exact IBM 5150 replica.
   the IBM ring buffer, and INT 1Ah does not implement midnight rollover.
 - Port E9h is a passive, test-only diagnostic recorder. It does not alter guest
   execution; snapshots retain a bounded sequence of POST progress/failure codes.
+- The BIOS boot path reads drive 0 CHS 0/0/1 to 0000:7C00, requires a 55AAh
+  signature, and transfers to 0000:7C00 with AX/BX/CX/DX/SI/DI/BP and
+  DS/ES/SS zero, SP=7C00h, DL=00h, and IF clear. There is currently no boot-order
+  scan, fixed-disk fallback, ROM BASIC, or configurable boot drive.
+
+## Debugger
+
+- Breakpoints are pre-execution physical-address stops, so segment aliases of
+  the same 20-bit location share a breakpoint. Bounded runs count instruction,
+  interrupt, DMA, and suspended-REP boundaries using the machine scheduler.
+- Trace records contain the pre-boundary cycle, CS:IP, physical address, and
+  first opcode byte. Workspace runs retain the newest 4,096 records and export
+  a stable plain-text form. Physical-memory inspection is non-wrapping and uses
+  the ordinary mapped bus view.
 
 ## Interrupts and timer
 

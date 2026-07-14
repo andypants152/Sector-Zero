@@ -30,3 +30,10 @@ reports progress and device-specific failure codes to passive test port E9h and
 prints its result through guest video. Its deliberately small boot-time service
 surface is INT 10h/AH=0Eh, INT 13h/AH=00h/02h, INT 16h/AH=00h/01h, and
 INT 1Ah/AH=00h.
+
+M49 extends the same reproducible ROM with its bootstrap path. After POST it
+reads drive 0 CHS 0/0/1 to physical 07C00h through INT 13h, requires the 55AAh
+signature, and reports read/signature failures as E1h/E2h on port E9h and guest
+text video. A successful handoff uses `CS:IP = 0000:7C00`, zeroes AX/BX/CX/DX,
+SI/DI/BP and DS/ES/SS, sets SP to 7C00h, leaves interrupts disabled, and identifies
+the only supported boot drive with DL=00h.

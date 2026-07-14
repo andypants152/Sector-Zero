@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct SectorZeroWorkspaceView: View {
     @Bindable var workspace: SectorZeroWorkspace
@@ -69,6 +72,9 @@ struct SectorZeroWorkspaceView: View {
             statusChip
             Spacer(minLength: 0)
             speedPicker
+            breakpointButton
+            boundedRunButton
+            traceButton
             runPauseButton
             stepButton
             resetButton
@@ -126,6 +132,48 @@ struct SectorZeroWorkspaceView: View {
             ? "Pause at the next instruction boundary (⌘R)"
             : "Run the machine (⌘R)")
         .accessibilityIdentifier("runPauseButton")
+    }
+
+    private var breakpointButton: some View {
+        Button {
+            workspace.toggleBreakpointAtCurrentAddress()
+        } label: {
+            controlLabel("BP", tint: workspace.hasBreakpointAtCurrentAddress ? .sectorAccent : nil)
+                .opacity(workspace.isRunning ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(workspace.isRunning)
+        .help("Toggle a breakpoint at the current physical code address")
+        .accessibilityIdentifier("breakpointButton")
+    }
+
+    private var boundedRunButton: some View {
+        Button {
+            workspace.runBounded(maxInstructions: 2_048)
+        } label: {
+            controlLabel("RUN 2K")
+                .opacity(workspace.isRunning ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(workspace.isRunning)
+        .help("Run at most 2,048 instruction boundaries")
+        .accessibilityIdentifier("boundedRunButton")
+    }
+
+    private var traceButton: some View {
+        Button {
+            #if os(macOS)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(workspace.exportedInstructionTrace, forType: .string)
+            #endif
+        } label: {
+            controlLabel("TRACE")
+                .opacity(workspace.instructionTrace.isEmpty ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(workspace.instructionTrace.isEmpty)
+        .help("Copy the deterministic instruction trace")
+        .accessibilityIdentifier("traceExportButton")
     }
 
     private var stepButton: some View {

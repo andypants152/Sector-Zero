@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M48 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M49 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -29,7 +29,8 @@ driven CRT rendering; XT keyboard scan-code delivery through the 8255/PIC;
 8237A floppy-channel DMA with page wrapping, terminal count, masking, and cycle
 accounting; a 765-compatible read-only floppy path with project media
 mount/eject; and a reproducible clean-room BIOS with POST diagnostics and
-boot-path interrupt services). The next milestone is M49 below.
+boot-path interrupt services, sector-zero validation/handoff, and deterministic
+debugger stops/traces). The next milestone is M50 below.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -786,7 +787,7 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
   RAM/video/PIC/floppy failure variants with distinct codes, and verify the
   diagnostic recorder is passive, bounded, snapshotted, and resettable.
 
-### M49 — Boot-sector execution gate
+### M49 — Boot-sector execution gate ✅
 - **Goal:** Reach and execute sector 0 from an unmodified disk image.
 - **Build:** BIOS bootstrap loads the boot sector at 0000:7C00, validates media
   errors, establishes the documented register contract, and transfers control.
@@ -796,6 +797,20 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
 - **Tests:** Known diagnostic boot sectors, bad signature/read failure paths,
   register/stack contract at handoff, deterministic trace golden files, and
   successful text output through emulated video.
+- **Completed:** The clean-room BIOS now loads drive 0 CHS 0/0/1 at 0000:7C00
+  through its real INT 13h → 765 → DMA channel 2 → IRQ6 path, returns missing
+  media synchronously, validates the trailing 55AAh signature, and emits distinct
+  E1h/E2h read/signature diagnostics through E9h and guest text. A valid sector
+  receives a far transfer to 0000:7C00 with general/index/base registers and
+  DS/ES/SS zero, SP=7C00h, DL=00h, and IF clear. The machine run API now supports
+  pre-execution physical breakpoints, explicit instruction bounds, bounded trace
+  capture/export, and validated non-wrapping physical-memory inspection. The
+  workspace exposes current-address breakpoint toggling, a 2,048-boundary run,
+  a rolling 4,096-entry trace, and deterministic trace copying. Tests stop before
+  the first boot instruction to inspect the exact sector and register/stack
+  contract, execute an untouched diagnostic sector through INT 10h to visible
+  text, exercise no-media and bad-signature screens/codes, verify memory-range
+  rejection and breakpoint semantics, and compare a golden trace string.
 
 ### M50 — MS-DOS 2.0 boot, then MS-DOS 4.0 qualification
 - **Goal:** First reach a stable MS-DOS 2.0 command prompt; only then qualify the

@@ -102,6 +102,8 @@ final class SectorZeroWorkspace {
     private(set) var machineSnapshot: MachineSnapshot
     private(set) var isRunning = false
     private(set) var lastRunStopReason: MachineRunStopReason?
+    private(set) var breakpoints: Set<UInt32> = []
+    private(set) var instructionTrace: [InstructionTraceEntry] = []
     var runSpeedCap: RunSpeedCap = .pcXT {
         didSet {
             runControl.setRunSpeedCap(runSpeedCap)
@@ -165,6 +167,9 @@ final class SectorZeroWorkspace {
         if lastRunStopReason == .paused {
             return MachineCondition(label: "PAUSED", severity: .held)
         }
+        if case .breakpoint = lastRunStopReason {
+            return MachineCondition(label: "BREAK", severity: .held)
+        }
         if machineSnapshot.loadedSystemROMByteCount == 0 {
             return MachineCondition(label: "NO ROM", severity: .held)
         }
@@ -179,6 +184,8 @@ final class SectorZeroWorkspace {
             return "Fault: \(Self.describe(fault))"
         }
         switch lastRunStopReason {
+        case .breakpoint(let address):
+            return String(format: "Breakpoint at %05Xh", address)
         case .paused:
             return "Paused at instruction boundary"
         case .halted:
@@ -220,16 +227,22 @@ final class SectorZeroWorkspace {
         activeRunID = runID
         isRunning = true
         lastRunStopReason = nil
+        instructionTrace.removeAll(keepingCapacity: true)
         runControl.begin()
 
         let machine = machine
         let control = runControl
         let sliceLimit = sliceInstructionLimit
+        let breakpoints = breakpoints
         executionQueue.async { [weak self] in
             while true {
                 guard self != nil else { return }
                 let sliceStart = Date.timeIntervalSinceReferenceDate
-                let result = machine.runSlice(maxInstructions: sliceLimit) {
+                let result = machine.runSlice(
+                    maxInstructions: sliceLimit,
+                    breakpoints: breakpoints,
+                    traceLimit: sliceLimit
+                ) {
                     control.shouldPause()
                 }
                 Self.throttle(result.elapsedClocks, startedAt: sliceStart, control: control)
@@ -271,10 +284,51 @@ final class SectorZeroWorkspace {
         runControl.requestPause()
     }
 
+    /// Executes at most `maxInstructions` synchronously, respecting configured
+    /// breakpoints and publishing both the final snapshot and deterministic trace.
+    @discardableResult
+    func runBounded(maxInstructions: Int) -> MachineRunSlice? {
+        guard !isRunning, maxInstructions >= 0 else { return nil }
+        let result = machine.runSlice(
+            maxInstructions: maxInstructions,
+            breakpoints: breakpoints,
+            traceLimit: maxInstructions
+        )
+        instructionTrace = result.trace
+        lastRunStopReason = result.stopReason
+        apply(result.snapshot)
+        return result
+    }
+
+    func toggleBreakpoint(at physicalAddress: UInt32) {
+        guard physicalAddress < UInt32(Memory.addressableSize) else { return }
+        if !breakpoints.insert(physicalAddress).inserted {
+            breakpoints.remove(physicalAddress)
+        }
+    }
+
+    func toggleBreakpointAtCurrentAddress() {
+        toggleBreakpoint(at: machineSnapshot.physicalCodeAddress)
+    }
+
+    var hasBreakpointAtCurrentAddress: Bool {
+        breakpoints.contains(machineSnapshot.physicalCodeAddress)
+    }
+
+    func inspectMemory(at physicalAddress: UInt32, byteCount: Int) throws -> [UInt8] {
+        guard !isRunning else { return [] }
+        return try machine.inspectMemory(at: physicalAddress, byteCount: byteCount)
+    }
+
+    var exportedInstructionTrace: String {
+        MachineDebugger.exportTrace(instructionTrace)
+    }
+
     func resetMachine() {
         guard !isRunning else { return }
         machine.reset()
         lastRunStopReason = nil
+        instructionTrace.removeAll(keepingCapacity: true)
         apply(machine.snapshot())
     }
 
@@ -398,6 +452,10 @@ final class SectorZeroWorkspace {
     private func publish(_ result: MachineRunSlice, for runID: UUID) {
         guard activeRunID == runID else { return }
         apply(result.snapshot)
+        instructionTrace.append(contentsOf: result.trace)
+        if instructionTrace.count > 4_096 {
+            instructionTrace.removeFirst(instructionTrace.count - 4_096)
+        }
         guard result.stopReason != .instructionLimit else { return }
         lastRunStopReason = result.stopReason
         isRunning = false

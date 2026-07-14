@@ -36,6 +36,7 @@ private final class HostScanCodeInbox: @unchecked Sendable {
 
 enum MachineRunStopReason: Equatable, Sendable {
     case instructionLimit
+    case breakpoint(UInt32)
     case paused
     case halted
     case waitingForCoprocessor
@@ -47,6 +48,7 @@ struct MachineRunSlice: Equatable, Sendable {
     let executedBoundaries: Int
     let elapsedClocks: UInt64
     let stopReason: MachineRunStopReason
+    let trace: [InstructionTraceEntry]
     let snapshot: MachineSnapshot
 }
 
@@ -324,12 +326,17 @@ final class Machine {
     /// instruction/interrupt boundary, independent of host wall-clock time.
     func runSlice(
         maxInstructions: Int,
+        breakpoints: Set<UInt32> = [],
+        traceLimit: Int = 0,
         shouldPause: () -> Bool = { false }
     ) -> MachineRunSlice {
         precondition(maxInstructions >= 0, "run-slice bound cannot be negative")
+        precondition(traceLimit >= 0, "trace limit cannot be negative")
         let startClocks = cycleCount
         var executedBoundaries = 0
         var stopReason: MachineRunStopReason = .instructionLimit
+        var trace: [InstructionTraceEntry] = []
+        trace.reserveCapacity(min(maxInstructions, traceLimit))
 
         while executedBoundaries < maxInstructions {
             // Drain before the halt check so a keystroke can raise IRQ1 and
@@ -347,6 +354,10 @@ final class Machine {
                 stopReason = .fault(fault)
                 break
             }
+            if breakpoints.contains(currentCodeAddress) {
+                stopReason = .breakpoint(currentCodeAddress)
+                break
+            }
             if cpu.halted && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .halted
                 break
@@ -354,6 +365,9 @@ final class Machine {
             if cpu.waitingForCoprocessor && !bus.coprocessorReady && !hasWakeableInterrupt && !hasServiceableFloppyDMA {
                 stopReason = .waitingForCoprocessor
                 break
+            }
+            if trace.count < traceLimit {
+                trace.append(traceEntry())
             }
             step()
             executedBoundaries += 1
@@ -375,7 +389,36 @@ final class Machine {
             executedBoundaries: executedBoundaries,
             elapsedClocks: cycleCount - startClocks,
             stopReason: stopReason,
+            trace: trace,
             snapshot: snapshot()
+        )
+    }
+
+    /// Reads a non-wrapping physical-memory range for debugger presentation.
+    /// The ordinary bus path is used so ROM, RAM, reserved regions, and mapped
+    /// video memory are represented exactly as the CPU observes them.
+    func inspectMemory(at address: UInt32, byteCount: Int) throws -> [UInt8] {
+        guard byteCount >= 0 else {
+            throw MemoryInspectionError.negativeByteCount(byteCount)
+        }
+        let end = UInt64(address) + UInt64(byteCount)
+        guard address < UInt32(Memory.addressableSize),
+              end <= UInt64(Memory.addressableSize) else {
+            throw MemoryInspectionError.rangeOutsideAddressSpace(
+                address: address,
+                byteCount: byteCount
+            )
+        }
+        return (0..<byteCount).map { bus.readByte(at: address + UInt32($0)) }
+    }
+
+    private func traceEntry() -> InstructionTraceEntry {
+        InstructionTraceEntry(
+            cycle: cycleCount,
+            cs: cpu.cs,
+            ip: cpu.ip,
+            physicalAddress: currentCodeAddress,
+            opcode: bus.readByte(at: currentCodeAddress)
         )
     }
 

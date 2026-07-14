@@ -162,11 +162,60 @@ pic_test_passed:
     call print_string
     movb $0xaa, %al
     outb %al, $0xe9
+
+    // M49 bootstrap: read drive 0, cylinder 0, head 0, sector 1 through the
+    // ordinary INT 13h/FDC/DMA path, validate 55AAh, then establish the
+    // documented Sector Zero boot contract before a far transfer.
+    movb $0xb0, %al
+    outb %al, $0xe9
     sti
+    xorw %ax, %ax
+    movw %ax, %es
+    movw $0x0201, %ax
+    movw $0x7c00, %bx
+    movw $0x0001, %cx
+    xorw %dx, %dx
+    int $0x13
+    jc boot_read_failure
+    movb $0xb1, %al
+    outb %al, $0xe9
+    cmpw $0xaa55, 0x7dfe
+    jne boot_signature_failure
+    movb $0xb2, %al
+    outb %al, $0xe9
+
+    cli
+    xorw %ax, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %ss
+    movw $0x7c00, %sp
+    movw %ax, %bx
+    movw %ax, %cx
+    movw %ax, %dx
+    movw %ax, %si
+    movw %ax, %di
+    movw %ax, %bp
+    ljmp $0x0000, $0x7c00
 
 bios_idle:
     hlt
     jmp bios_idle
+
+boot_read_failure:
+    movb $0xe1, %al
+    movw $boot_read_failure_message, %si
+    jmp boot_failure
+boot_signature_failure:
+    movb $0xe2, %al
+    movw $boot_signature_failure_message, %si
+boot_failure:
+    outb %al, $0xe9
+    call print_string
+boot_failure_halt:
+    sti
+    hlt
+    jmp boot_failure_halt
 
 fail_memory:
     movb $0xf1, %al
@@ -438,6 +487,15 @@ int13_request_valid:
     decb %ah
     movb %ah, REQ_EOT
 
+    // Fail synchronously when drive 0 has no mounted medium. The controller's
+    // missing-media result phase has no DMA completion IRQ to wait for.
+    movw $0x03f7, %dx
+    inb %dx, %al
+    testb $0x80, %al
+    jz int13_media_present
+    jmp int13_read_error
+int13_media_present:
+
     // Compute the 20-bit ES:BX destination as DMA page DL + address SI.
     movw %es, %dx
     movb $12, %cl
@@ -554,6 +612,10 @@ post_message:
     .asciz "Sector Zero BIOS M48 - POST PASS"
 failure_message:
     .asciz "Sector Zero BIOS M48 - POST FAIL"
+boot_read_failure_message:
+    .asciz " - BOOT READ FAIL"
+boot_signature_failure_message:
+    .asciz " - BOOT SIGNATURE FAIL"
 
 // Unshifted scan-code set 1. Zero entries are non-printing keys.
 scan_code_ascii:

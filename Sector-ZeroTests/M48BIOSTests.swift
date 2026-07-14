@@ -17,14 +17,26 @@ struct M48BIOSTests {
         firmwareDirectory.appendingPathComponent("m48-bios.bin")
     }
 
-    private func bootMachine(disk: Data? = nil) throws -> Machine {
+    private func run(_ process: Process) async throws -> Int32 {
+        try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { completed in
+                continuation.resume(returning: completed.terminationStatus)
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private func bootMachine() throws -> Machine {
         let machine = Machine()
-        if let disk { try machine.mountFloppyDisk(disk) }
         try machine.loadSystemROM(Data(contentsOf: firmwareURL))
         let result = machine.runSlice(maxInstructions: 4_096)
         #expect(result.stopReason == .halted)
         #expect(result.snapshot.cpu.fault == nil)
-        #expect(result.snapshot.diagnosticPort.lastCode == 0xAA)
+        #expect(result.snapshot.diagnosticPort.codes.contains(0xAA))
         return machine
     }
 
@@ -36,7 +48,7 @@ struct M48BIOSTests {
     }
 
     @Test("The checked-in BIOS is exactly reproducible with the native toolchain")
-    func reproducibleBuild() throws {
+    func reproducibleBuild() async throws {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SectorZeroM48-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: outputURL) }
@@ -44,10 +56,8 @@ struct M48BIOSTests {
         let process = Process()
         process.executableURL = firmwareDirectory.appendingPathComponent("build-m48-bios.sh")
         process.arguments = [outputURL.path]
-        try process.run()
-        process.waitUntilExit()
 
-        #expect(process.terminationStatus == 0)
+        #expect(try await run(process) == 0)
         #expect(try Data(contentsOf: outputURL) == Data(contentsOf: firmwareURL))
         #expect(try Data(contentsOf: outputURL).count == 65_536)
     }
@@ -57,7 +67,7 @@ struct M48BIOSTests {
         let machine = try bootMachine()
         let snapshot = machine.snapshot()
 
-        #expect(snapshot.diagnosticPort.codes == [0x10, 0x20, 0x30, 0x40, 0x50, 0xAA])
+        #expect(snapshot.diagnosticPort.codes.starts(with: [0x10, 0x20, 0x30, 0x40, 0x50, 0xAA]))
         #expect(machine.bus.readWord(at: 0x0040) != 0)
         #expect(machine.bus.readWord(at: 0x0042) == 0xF000)
         #expect(machine.bus.readWord(at: 0x004C) != 0)
@@ -76,7 +86,7 @@ struct M48BIOSTests {
     }
 
     @Test("Injected POST faults identify RAM, video, PIC, and floppy failures")
-    func postFailureCodes() throws {
+    func postFailureCodes() async throws {
         let outputDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SectorZeroM48-failures-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: outputDirectory) }
@@ -84,9 +94,7 @@ struct M48BIOSTests {
         let process = Process()
         process.executableURL = firmwareDirectory.appendingPathComponent("build-m48-bios.sh")
         process.arguments = [outputDirectory.path, "all"]
-        try process.run()
-        process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
+        #expect(try await run(process) == 0)
 
         for component in [1, 2, 3, 6] {
             let outputURL = outputDirectory
@@ -131,7 +139,8 @@ struct M48BIOSTests {
     func keyboardAndDiskServices() throws {
         var diskBytes = [UInt8](repeating: 0, count: 40 * 2 * 9 * 512)
         for index in 0..<512 { diskBytes[index] = UInt8(truncatingIfNeeded: index) }
-        let machine = try bootMachine(disk: Data(diskBytes))
+        let machine = try bootMachine()
+        try machine.mountFloppyDisk(Data(diskBytes))
 
         machine.postScanCode(0x23) // H make code.
         _ = machine.runSlice(maxInstructions: 64)
