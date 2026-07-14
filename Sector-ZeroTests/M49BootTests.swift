@@ -127,6 +127,18 @@ struct M49BootTests {
         }
     }
 
+    @Test("A bounded trace retains the instruction boundaries immediately before failure")
+    func rollingFailureTrace() throws {
+        let machine = Machine()
+        try machine.bus.loadBytes([0x90, 0x90, 0xF1], at: 0xFFFF0)
+
+        let result = machine.runSlice(maxInstructions: 8, traceLimit: 2)
+
+        #expect(result.stopReason == .fault(.unsupportedOpcode(0xF1)))
+        #expect(result.trace.map(\.physicalAddress) == [0xFFFF1, 0xFFFF2])
+        #expect(result.trace.map(\.opcode) == [0x90, 0xF1])
+    }
+
     @Test("Workspace breakpoint and bounded-run controls publish debugger state")
     func workspaceDebuggerControls() throws {
         let machine = Machine()

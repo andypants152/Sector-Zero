@@ -366,7 +366,10 @@ final class Machine {
                 stopReason = .waitingForCoprocessor
                 break
             }
-            if trace.count < traceLimit {
+            if traceLimit > 0 {
+                if trace.count == traceLimit {
+                    trace.removeFirst()
+                }
                 trace.append(traceEntry())
             }
             step()

@@ -5,7 +5,17 @@ import Testing
 /// Milestone 48 — reproducible clean-room ROM, POST diagnostics, initialized
 /// PC state, and the minimal BIOS services used by the boot path.
 @MainActor
+@Suite(.serialized)
 struct M48BIOSTests {
+    private struct FirmwareBuildError: Error, CustomStringConvertible {
+        let status: Int32
+        let output: String
+
+        var description: String {
+            "firmware build exited \(status): \(output)"
+        }
+    }
+
     private var firmwareDirectory: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -18,9 +28,21 @@ struct M48BIOSTests {
     }
 
     private func run(_ process: Process) async throws -> Int32 {
-        try await withCheckedThrowingContinuation { continuation in
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        return try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { completed in
-                continuation.resume(returning: completed.terminationStatus)
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                let text = String(decoding: data, as: UTF8.self)
+                if completed.terminationStatus == 0 {
+                    continuation.resume(returning: completed.terminationStatus)
+                } else {
+                    continuation.resume(throwing: FirmwareBuildError(
+                        status: completed.terminationStatus,
+                        output: text
+                    ))
+                }
             }
             do {
                 try process.run()
@@ -135,6 +157,23 @@ struct M48BIOSTests {
         #expect(!machine.cpu.flags[.carry])
     }
 
+    @Test("PC equipment, memory-size, serial, and printer BIOS contracts are deterministic")
+    func platformServices() throws {
+        let machine = try bootMachine()
+
+        _ = callBIOS(0x11, on: machine)
+        #expect(machine.cpu.ax == 0x0021) // One floppy drive and 80x25 color video.
+
+        _ = callBIOS(0x12, on: machine)
+        #expect(machine.cpu.ax == 640)
+
+        _ = callBIOS(0x14, on: machine)
+        #expect(machine.cpu.ax == 0x8000) // No serial adapter: timeout.
+
+        _ = callBIOS(0x17, on: machine)
+        #expect(machine.cpu.registers[.ah] == 0x01) // No printer: timeout.
+    }
+
     @Test("IRQ1 feeds INT 16h and INT 13h reads a real image sector through DMA")
     func keyboardAndDiskServices() throws {
         var diskBytes = [UInt8](repeating: 0, count: 40 * 2 * 9 * 512)
@@ -149,6 +188,13 @@ struct M48BIOSTests {
         #expect(machine.cpu.registers[.al] == UInt8(ascii: "h"))
         #expect(machine.cpu.registers[.ah] == 0x23)
         #expect(!machine.cpu.flags[.zero])
+
+        machine.postScanCode(0x1C) // Enter make code.
+        _ = machine.runSlice(maxInstructions: 64)
+        _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0000))
+        _ = callBIOS(0x16, on: machine)
+        #expect(machine.cpu.registers[.al] == 13)
+        #expect(machine.cpu.registers[.ah] == 0x1C)
 
         _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0201))
         _ = machine.cpu.execute(.movImmediateToRegister16(.bx, 0x7C00))
@@ -165,6 +211,23 @@ struct M48BIOSTests {
             machine.bus.readByte(at: UInt32(0x7C00 + $0)) == UInt8(truncatingIfNeeded: $0)
         })
         #expect(machine.snapshot().dmaController.channel2.terminalCount)
+
+        // A high conventional-memory destination must retain the DMA page.
+        // This catches BIOS arithmetic that accidentally clobbers DL after
+        // calculating the page register value for ES:BX.
+        _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0201))
+        _ = machine.cpu.execute(.movImmediateToRegister16(.bx, 0x0140))
+        _ = machine.cpu.execute(.movImmediateToRegister16(.cx, 0x0001))
+        _ = machine.cpu.execute(.movImmediateToRegister16(.dx, 0x0000))
+        machine.cpu.writeSegment(0x9CC0, to: .es)
+        _ = callBIOS(0x13, on: machine)
+
+        #expect(machine.cpu.registers[.ah] == 0)
+        #expect((0..<512).allSatisfy {
+            machine.bus.readByte(at: UInt32(0x9CD40 + $0)) == UInt8(truncatingIfNeeded: $0)
+        })
+        #expect(machine.snapshot().dmaController.channel2.page == 0x09)
+        #expect(machine.snapshot().floppyController.recentReads.last?.dmaAddress == 0x9CD40)
     }
 
     @Test("The diagnostic port is passive, bounded, and cleared by machine reset")

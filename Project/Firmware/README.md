@@ -28,8 +28,11 @@ From the architectural reset vector, the ROM initializes the IVT/BDA, CGA text
 mode, master PIC, PIT channel 0, XT keyboard path, and floppy controller. POST
 reports progress and device-specific failure codes to passive test port E9h and
 prints its result through guest video. Its deliberately small boot-time service
-surface is INT 10h/AH=0Eh, INT 13h/AH=00h/02h, INT 16h/AH=00h/01h, and
-INT 1Ah/AH=00h.
+surface is INT 10h/AH=0Eh, INT 11h, INT 12h, INT 13h/AH=00h/02h, INT 14h,
+INT 16h/AH=00h/01h, INT 17h, and INT 1Ah/AH=00h. The absent serial and
+printer services return deterministic timeout status. The keyboard table
+includes the unshifted editing controls needed by DOS (Escape, Backspace, Tab,
+and Enter).
 
 M49 extends the same reproducible ROM with its bootstrap path. After POST it
 reads drive 0 CHS 0/0/1 to physical 07C00h through INT 13h, requires the 55AAh
@@ -37,3 +40,16 @@ signature, and reports read/signature failures as E1h/E2h on port E9h and guest
 text video. A successful handoff uses `CS:IP = 0000:7C00`, zeroes AX/BX/CX/DX,
 SI/DI/BP and DS/ES/SS, sets SP to 7C00h, leaves interrupts disabled, and identifies
 the only supported boot drive with DL=00h.
+
+M50 retains the same standard INT 13h path for DOS file reads. Its ES:BX DMA
+setup preserves all four page bits, including destinations in high conventional
+RAM; focused tests cover a transfer into page 09h. The emulator also retains a
+bounded controller-level history of validated CHS reads and DMA destinations for
+boot-time failure reports.
+
+M52 begins the full Sector Zero System BIOS arc. POST now gives all 256 IVT
+vectors a safe ROM-resident endpoint before installing supported services and
+IRQs. It publishes conventional equipment, memory-size, disk-status, mode-3
+video, timer-rollover, and warm-boot fields in the BIOS data area. The standard
+top-of-ROM identity locations contain the stable build date `07/13/26` and the
+PC-compatible model byte `FFh`.

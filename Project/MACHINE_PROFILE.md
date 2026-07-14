@@ -28,10 +28,13 @@ around an Intel 8086 core. It is not a cycle-exact IBM 5150 replica.
   be demoted if real firmware uses harmless ROM-write probes.
 - Firmware images are host-loaded, top-aligned in the 64 KiB system-ROM window,
   and must contain between 1 byte and 64 KiB.
-- The M48 clean-room BIOS is a 64 KiB image at F000:0000 with the architectural
-  reset vector at F000:FFF0. It owns IRQ0/1/6 and implements only INT 10h/AH=0Eh,
-  INT 13h/AH=00h/02h, INT 16h/AH=00h/01h, and INT 1Ah/AH=00h. Other functions
-  return unsupported status or remain outside the current boot contract.
+- The clean-room BIOS is a 64 KiB image at F000:0000 with the architectural
+  reset vector and conventional date/model identity at the top of ROM. All IVT
+  entries point into firmware, with a state-preserving default for unimplemented
+  vectors. It owns IRQ0/1/6 and implements INT 10h/AH=0Eh, INT 11h, INT 12h,
+  INT 13h/AH=00h/02h, INT 14h, INT 16h/AH=00h/01h, INT 17h, and INT 1Ah/AH=00h.
+  Other functions return unsupported status or remain outside the current BIOS
+  contract.
 - BIOS INT 13h reads currently support drive 0 and CHS values whose cylinder
   fits in CH. Callers must not cross a track or a 64 KiB DMA boundary in one
   request. INT 10h does not scroll, INT 16h uses a single-key latch rather than

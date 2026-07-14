@@ -13,5 +13,7 @@ struct Sector_ZeroApp: App {
         WindowGroup {
             ContentView()
         }
+        .defaultSize(width: 1_280, height: 800)
+        .windowResizability(.contentMinSize)
     }
 }

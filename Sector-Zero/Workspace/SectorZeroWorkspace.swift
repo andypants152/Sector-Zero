@@ -89,6 +89,8 @@ struct MachineCondition: Equatable, Sendable {
 @MainActor
 @Observable
 final class SectorZeroWorkspace {
+    private static let builtInFirmwareResourceName = "m48-bios"
+    private static let builtInFirmwareResourceExtension = "bin"
     private let recentProjectsKey = "SectorZero.RecentProjects"
     private let runSpeedCapKey = "SectorZero.RunSpeedCap"
     private let maximumRecentProjects = 8
@@ -400,6 +402,18 @@ final class SectorZeroWorkspace {
         }
     }
 
+    @discardableResult
+    func installBuiltInFirmware() -> Bool {
+        guard let sourceURL = Bundle.main.url(
+            forResource: Self.builtInFirmwareResourceName,
+            withExtension: Self.builtInFirmwareResourceExtension
+        ) else {
+            errorMessage = "The built-in Sector Zero BIOS is missing from this app build."
+            return false
+        }
+        return configureFirmware(from: sourceURL)
+    }
+
     /// Validates and installs a disk-image copy into the open project, then
     /// mounts the same bytes in the floppy controller without resetting the CPU.
     @discardableResult
@@ -489,7 +503,8 @@ final class SectorZeroWorkspace {
     func createProject(named projectName: String, in destinationFolderURL: URL) -> Bool {
         do {
             let project = try SectorZeroProjectStore.createProject(named: projectName, in: destinationFolderURL)
-            return open(project)
+            guard open(project) else { return false }
+            return installBuiltInFirmware()
         } catch {
             errorMessage = error.localizedDescription
             return false

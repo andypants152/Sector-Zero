@@ -11,10 +11,24 @@
     .set FORCE_POST_FAILURE, 0
     .endif
 
-// BDA locations used by this minimal firmware (DS = 0000h).
+// Canonical PC BIOS data-area locations (DS = 0000h).
+    .set BDA_EQUIPMENT,    0x0410
+    .set BDA_MEMORY_KB,    0x0413
+    .set BDA_DISK_STATUS,  0x0441
+    .set BDA_VIDEO_MODE,   0x0449
+    .set BDA_COLUMNS,      0x044a
+    .set BDA_PAGE_SIZE,    0x044c
+    .set BDA_PAGE_OFFSET,  0x044e
     .set BDA_CURSOR,       0x0450
+    .set BDA_CURSOR_SHAPE, 0x0460
+    .set BDA_ACTIVE_PAGE,  0x0462
+    .set BDA_CRTC_BASE,    0x0463
+    .set BDA_MODE_CONTROL, 0x0465
+    .set BDA_COLOR_SELECT, 0x0466
     .set BDA_TICKS_LOW,    0x046c
     .set BDA_TICKS_HIGH,   0x046e
+    .set BDA_MIDNIGHT,     0x0470
+    .set BDA_WARM_BOOT,    0x0472
     .set BDA_KEY_WORD,     0x0490
     .set BDA_KEY_READY,    0x0492
     .set FDC_DONE,         0x0493
@@ -36,9 +50,23 @@ bios_entry:
     movb $0x10, %al
     outb %al, $0xe9
 
-    // Clear the IVT and the first 256 bytes of the BIOS data area.
+    // Give every interrupt a safe firmware-owned endpoint before installing
+    // the services and IRQs implemented by this machine.
     xorw %di, %di
-    movw $640, %cx
+    movw $default_interrupt_handler, %ax
+    movw $0xf000, %dx
+    movw $256, %cx
+initialize_ivt:
+    stosw
+    xchgw %ax, %dx
+    stosw
+    xchgw %ax, %dx
+    loop initialize_ivt
+
+    // Clear the 256-byte BIOS data area before publishing platform state.
+    movw $0x0400, %di
+    xorw %ax, %ax
+    movw $128, %cx
     rep stosw
 
     // Install the firmware-owned software and hardware interrupt vectors.
@@ -50,10 +78,18 @@ bios_entry:
     movw $0xf000, 0x003a
     movw $int10_handler, 0x0040
     movw $0xf000, 0x0042
+    movw $int11_handler, 0x0044
+    movw $0xf000, 0x0046
+    movw $int12_handler, 0x0048
+    movw $0xf000, 0x004a
     movw $int13_handler, 0x004c
     movw $0xf000, 0x004e
+    movw $int14_handler, 0x0050
+    movw $0xf000, 0x0052
     movw $int16_handler, 0x0058
     movw $0xf000, 0x005a
+    movw $int17_handler, 0x005c
+    movw $0xf000, 0x005e
     movw $int1a_handler, 0x0068
     movw $0xf000, 0x006a
 
@@ -153,6 +189,23 @@ pic_test_passed:
     movw %ax, BDA_KEY_WORD
     movb %al, BDA_KEY_READY
     movb %al, FDC_DONE
+
+    // Publish the standard PC platform and mode-3 text fields. Later BIOS
+    // services update these values instead of maintaining private shadows.
+    movw $0x0021, BDA_EQUIPMENT
+    movw $640, BDA_MEMORY_KB
+    movb $0, BDA_DISK_STATUS
+    movb $3, BDA_VIDEO_MODE
+    movw $80, BDA_COLUMNS
+    movw $0x1000, BDA_PAGE_SIZE
+    movw $0, BDA_PAGE_OFFSET
+    movw $0x0607, BDA_CURSOR_SHAPE
+    movb $0, BDA_ACTIVE_PAGE
+    movw $0x03d4, BDA_CRTC_BASE
+    movb $0x29, BDA_MODE_CONTROL
+    movb $0, BDA_COLOR_SELECT
+    movb $0, BDA_MIDNIGHT
+    movw $0, BDA_WARM_BOOT
 
     movb $0x50, %al
     outb %al, $0xe9
@@ -341,6 +394,32 @@ irq6_handler:
     popw %ax
     iretw
 
+// Unimplemented and reserved vectors return without mutating caller state.
+// Every exposed hardware IRQ and supported BIOS service is installed above.
+default_interrupt_handler:
+    iretw
+
+// INT 11h/12h: PC-compatible equipment and conventional-memory reports.
+// The equipment word advertises diskette hardware, one installed drive, and
+// 80x25 color video. Conventional RAM occupies the complete 640 KiB PC range.
+int11_handler:
+    movw $0x0021, %ax
+    iretw
+
+int12_handler:
+    movw $640, %ax
+    iretw
+
+// INT 14h/17h: deterministic absent serial and printer devices. Their status
+// bits report timeout/not-ready, matching the zero port counts in INT 11h.
+int14_handler:
+    movw $0x8000, %ax
+    iretw
+
+int17_handler:
+    movb $0x01, %ah
+    iretw
+
 // INT 10h: AH=0Eh teletype output. Other functions return unchanged.
 int10_handler:
     cmpb $0x0e, %ah
@@ -496,6 +575,15 @@ int13_request_valid:
     jmp int13_read_error
 int13_media_present:
 
+    // Compute the terminal count before the DMA page because MUL writes DX:AX.
+    // Keeping the page calculation second preserves DL until port 81h is set.
+    xorw %ax, %ax
+    movb REQ_COUNT, %al
+    movw $512, %cx
+    mulw %cx
+    decw %ax
+    movw %ax, %di
+
     // Compute the 20-bit ES:BX destination as DMA page DL + address SI.
     movw %es, %dx
     movb $12, %cl
@@ -506,13 +594,6 @@ int13_media_present:
     addw %bx, %ax
     adcb $0, %dl
     movw %ax, %si
-
-    xorw %ax, %ax
-    movb REQ_COUNT, %al
-    movw $512, %cx
-    mulw %cx
-    decw %ax
-    movw %ax, %di
 
     movb $0x06, %al
     outb %al, $0x0a
@@ -617,12 +698,13 @@ boot_read_failure_message:
 boot_signature_failure_message:
     .asciz " - BOOT SIGNATURE FAIL"
 
-// Unshifted scan-code set 1. Zero entries are non-printing keys.
+// Unshifted scan-code set 1. BIOS-visible editing controls retain their ASCII
+// values; modifier and lock keys remain zero until their state is modeled.
 scan_code_ascii:
-    .byte 0, 0, '1', '2', '3', '4', '5', '6'
-    .byte '7', '8', '9', '0', '-', '=', 0, 0
+    .byte 0, 27, '1', '2', '3', '4', '5', '6'
+    .byte '7', '8', '9', '0', '-', '=', 8, 9
     .byte 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i'
-    .byte 'o', 'p', '[', ']', 0, 0, 'a', 's'
+    .byte 'o', 'p', '[', ']', 13, 0, 'a', 's'
     .byte 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'
     .byte '\'', '`', 0, '\\', 'z', 'x', 'c', 'v'
     .byte 'b', 'n', 'm', ',', '.', '/', 0, '*'
@@ -631,4 +713,7 @@ scan_code_ascii:
     .org 0xfff0
 reset_vector:
     ljmp $0xf000, $bios_entry
-    .fill 11, 1, 0xf4
+    .ascii "07/13/26"
+    .byte 0
+    .byte 0xff
+    .byte 0

@@ -139,6 +139,14 @@ struct FloppyDiskControllerTests {
         #expect(snapshot.dmaController.channel2.terminalCount)
         #expect(snapshot.dmaController.channel2.masked)
         #expect(snapshot.cycleCount == startingCycles + UInt64(512 * 4))
+        #expect(snapshot.floppyController.recentReads == [FloppyReadTrace(
+            cylinder: 2,
+            head: 0,
+            sector: 3,
+            endOfTrack: 3,
+            dmaAddress: 0x2000,
+            byteCount: 512
+        )])
 
         let expectedLogicalSector = (2 * 8) + 2
         #expect((0..<sectorSize).allSatisfy {
@@ -146,6 +154,9 @@ struct FloppyDiskControllerTests {
         })
         #expect(readResult(7, from: machine) == [0, 0, 0, 2, 0, 3, 2])
         #expect(machine.snapshot().floppyController.phase == .idle)
+
+        machine.reset()
+        #expect(machine.snapshot().floppyController.recentReads.isEmpty)
     }
 
     @Test("Missing media and invalid end-of-track complete with 765 error results")
@@ -194,7 +205,6 @@ struct FloppyDiskControllerTests {
             sectorsPerTrack: 8,
             bytesPerSector: 512
         ))
-
         machine.ejectFloppyDisk()
         snapshot = machine.snapshot().floppyController
         #expect(snapshot.mediaGeometry == nil)

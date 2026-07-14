@@ -10,83 +10,156 @@ struct NewProjectSheet: View {
 
     @State private var projectName = ""
     @State private var destinationFolderURL: URL? = Self.defaultDestinationFolderURL
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(spacing: 0) {
             header
-            fields
+            Divider().overlay(Color.sectorBorder)
+            form
+            Divider().overlay(Color.sectorBorder)
             actions
         }
-        .padding(24)
-        .frame(minWidth: 300, idealWidth: 460, maxWidth: 460)
+        .frame(width: 500)
+        .background(Color.sectorWorkspace)
+        .onAppear {
+            isNameFocused = true
+        }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("New Machine")
-                .font(.title2.weight(.semibold))
-            Text("Create a Sector Zero machine package on disk.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var fields: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Machine Name")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TextField("Machine Name", text: $projectName)
-                    .textFieldStyle(.roundedBorder)
+        HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.sectorSelection)
+                Image(systemName: "macwindow.badge.plus")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(Color.sectorRun)
+            }
+            .frame(width: 44, height: 44)
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color.sectorStrongBorder, lineWidth: 1)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Destination Folder")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    Text(destinationFolderURL?.path ?? "No folder selected")
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
-                        .foregroundStyle(destinationFolderURL == nil ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Create Machine")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Color.sectorText)
+                Text("Set up a new Sector Zero machine package.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.sectorMutedText)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(22)
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectorSectionLabel(title: "MACHINE NAME", systemImage: "desktopcomputer")
+                TextField("e.g. My 8086", text: $projectName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.sectorText)
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(Color.sectorElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(isNameFocused ? Color.sectorRun.opacity(0.7) : Color.sectorBorder, lineWidth: 1)
+                    }
+                    .focused($isNameFocused)
+                    .onSubmit(createProject)
+                    .accessibilityIdentifier("machineNameField")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                SectorSectionLabel(title: "SAVE LOCATION", systemImage: "folder")
+                HStack(spacing: 10) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.sectorHeading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(destinationFolderURL?.lastPathComponent ?? "No folder selected")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.sectorText)
+                        Text(destinationFolderURL?.path ?? "Choose where to save this machine")
+                            .font(.sectorMono(9, weight: .regular))
+                            .foregroundStyle(Color.sectorMutedText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     #if os(macOS)
-                    chooseDestinationButton
+                    Button("Choose…") {
+                        chooseDestinationFolder()
+                    }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("chooseMachineDestinationButton")
                     #endif
                 }
+                .padding(12)
+                .sectorCard(fill: .sectorElevated)
             }
-        }
-    }
 
-    private var chooseDestinationButton: some View {
-        Button {
-            chooseDestinationFolder()
-        } label: {
-            Label("Choose", systemImage: "folder")
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(Color.sectorAccent)
+                Text("Sector Zero’s clean-room BIOS is installed automatically. You can replace it with a custom ROM and add floppy media after creation.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.sectorMutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .sectorCard(fill: Color.sectorAccent.opacity(0.05))
         }
+        .padding(22)
     }
 
     private var actions: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Text(packageNamePreview)
+                .font(.sectorMono(9, weight: .regular))
+                .foregroundStyle(Color.sectorMutedText)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
-            Button("Cancel") {
+            Button("Cancel", role: .cancel) {
                 dismiss()
             }
+            .keyboardShortcut(.cancelAction)
+
             Button {
                 createProject()
             } label: {
-                Label("Create", systemImage: "plus")
+                Label("Create Machine", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
+            .tint(Color.sectorRun)
+            .keyboardShortcut(.defaultAction)
             .disabled(!canCreateProject)
+            .accessibilityIdentifier("createMachineButton")
         }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+        .background(Color.sectorSidebar)
     }
 
     private var canCreateProject: Bool {
-        !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && destinationFolderURL != nil
+        !trimmedProjectName.isEmpty && destinationFolderURL != nil
+    }
+
+    private var trimmedProjectName: String {
+        projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var packageNamePreview: String {
+        guard !trimmedProjectName.isEmpty else { return "Creates a .szm package" }
+        return "\(trimmedProjectName).szm"
     }
 
     private func chooseDestinationFolder() {
@@ -99,10 +172,7 @@ struct NewProjectSheet: View {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
 
-        guard panel.runModal() == .OK else {
-            return
-        }
-
+        guard panel.runModal() == .OK else { return }
         destinationFolderURL = panel.url
         #else
         workspace.errorMessage = "Choosing a destination folder is only available on macOS."
@@ -110,11 +180,8 @@ struct NewProjectSheet: View {
     }
 
     private func createProject() {
-        guard let destinationFolderURL else {
-            return
-        }
-
-        if workspace.createProject(named: projectName, in: destinationFolderURL) {
+        guard canCreateProject, let destinationFolderURL else { return }
+        if workspace.createProject(named: trimmedProjectName, in: destinationFolderURL) {
             dismiss()
         }
     }

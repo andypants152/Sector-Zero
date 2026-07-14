@@ -44,8 +44,9 @@ struct WorkspaceFirmwareTests {
 
         let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
         #expect(workspace.createProject(named: "Configurable", in: root))
-        workspace.step() // fault on the empty ROM so reset has something to clear
-        #expect(workspace.machineSnapshot.cpu.fault != nil)
+        #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 64 * 1_024)
+        #expect(workspace.currentProject?.metadata.firmwarePath == "firmware/m48-bios.bin")
+        #expect(workspace.machineSnapshot.cpu.fault == nil)
 
         let sourceURL = root.appendingPathComponent("bios.bin", isDirectory: false)
         try haltImage.write(to: sourceURL)
@@ -78,14 +79,16 @@ struct WorkspaceFirmwareTests {
 
         let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
         #expect(workspace.createProject(named: "Oversized", in: root))
+        let originalFirmwarePath = workspace.currentProject?.metadata.firmwarePath
+        let originalFirmwareByteCount = workspace.machineSnapshot.loadedSystemROMByteCount
 
         let sourceURL = root.appendingPathComponent("big.bin", isDirectory: false)
         try Data(count: 65 * 1024).write(to: sourceURL)
 
         #expect(!workspace.configureFirmware(from: sourceURL))
         #expect(workspace.errorMessage != nil)
-        #expect(workspace.currentProject?.metadata.firmwarePath == nil)
-        #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 0)
+        #expect(workspace.currentProject?.metadata.firmwarePath == originalFirmwarePath)
+        #expect(workspace.machineSnapshot.loadedSystemROMByteCount == originalFirmwareByteCount)
     }
 
     @Test("Configuring firmware without an open machine fails with an explanation")

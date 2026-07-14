@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M49 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M49, M51, and M52 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -30,7 +30,8 @@ driven CRT rendering; XT keyboard scan-code delivery through the 8255/PIC;
 accounting; a 765-compatible read-only floppy path with project media
 mount/eject; and a reproducible clean-room BIOS with POST diagnostics and
 boot-path interrupt services, sector-zero validation/handoff, and deterministic
-debugger stops/traces). The next milestone is M50 below.
+debugger stops/traces). M50 remains an open operating-system qualification
+checkpoint; the next implementation milestone is M53 in the System BIOS arc.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -825,12 +826,134 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
 - **Tests:** Bounded-cycle boot to prompt, `VER`/`DIR`/file-read fixtures,
   keyboard editing, timer rollover sanity, warm/cold reboot, deterministic disk
   reads, and a saved failure trace on timeout.
+- **Progress:** An external, unmodified PC DOS 2.00 reference image now reaches a
+  stable `A>` prompt after date/time input. The trace-driven compatibility fixes
+  add the standard INT 11h/12h/14h/17h contracts, preserve the DMA page across
+  BIOS INT 13h count arithmetic, translate BIOS editing controls, and retain a
+  bounded CHS/DMA read history. Bounded instruction traces are rolling windows,
+  so timeout and fault reports retain the boundaries immediately before the
+  stop. Fixture-independent regressions cover those contracts. The pinned
+  Microsoft-source fixture and the command/reboot suites remain outstanding
+  before M50 can be marked complete or DOS 4 qualification can begin.
+
+### M51 — Workspace UX foundation ✅
+- **Goal:** Make the current create → configure → boot → inspect loop clear
+  without requiring roadmap knowledge or decoding an undifferentiated toolbar.
+- **Build:** Establish a shared visual system and a dedicated empty state;
+  reorganize machines, firmware, and floppy media into a setup-oriented sidebar;
+  group execution and debugging controls by frequency; frame the CGA display
+  with keyboard/media affordances; and make CPU state, errors, paths, and project
+  creation easier to scan.
+- **Don't:** Change emulator behavior to accommodate the interface, hide advanced
+  controls, bundle an operating-system image, or imply that missing firmware is
+  a machine fault.
+- **Tests:** Preserve keyboard shortcuts and accessibility identifiers, compile
+  every Swift source, and run the complete emulator/workspace regression suite.
+- **Completed:** Added a first-run workspace with a three-step path, an active-
+  machine and recent-machine browser, inline firmware/floppy setup, safer recent
+  project actions, firmware readiness guidance, a grouped execution toolbar,
+  visible run/media state, a display keyboard hint, a card-based scrollable CPU
+  inspector, an improved creation sheet, disabled-state feedback, clearer error
+  copy, a bundled clean-room BIOS installed automatically for new machines, and
+  a sensible default window size. Completed out of sequence while the
+  legal fixture and qualification work keeping M50 open remains outstanding.
+
+## Sector Zero System BIOS (M52–M57)
+
+These milestones turn the clean-room bootstrap firmware into the BIOS a real
+1980s Sector Zero PC manufacturer would have shipped. Compatibility means a
+complete, internally consistent contract for installed hardware. Services for
+absent hardware report that absence honestly; they do not emulate devices in
+firmware or introduce host-side interrupt shortcuts. Each milestone remains a
+separate review gate even when later operating-system qualification exposes the
+next gap.
+
+### M52 — BIOS data-area, vector, and ROM identity foundation ✅
+- **Goal:** Make the machine describe itself through conventional PC firmware
+  structures before broadening any individual interrupt service.
+- **Build:** Populate every IVT entry with a safe firmware endpoint, override
+  installed software and hardware vectors, publish canonical BDA equipment,
+  memory, disk-status, video, timer, and warm-boot fields, and place a stable
+  build date and PC-compatible model byte in the top-of-ROM identity area.
+- **Don't:** Add services for devices the machine does not contain; treat zeroed
+  IVT entries or private BIOS state as an acceptable long-term interface.
+- **Tests:** Inspect every IVT entry, execute an unimplemented vector through the
+  fallback, validate BDA values against initialized hardware, validate ROM
+  identity offsets, and retain the byte-for-byte reproducible build check.
+- **Completed:** All 256 vectors now enter the system ROM, with installed IRQ and
+  BIOS services replacing a state-preserving IRET fallback. POST clears and
+  initializes the canonical 256-byte BDA with the installed equipment word,
+  640 KiB memory size, mode-3 video geometry/state, disk status, timer rollover,
+  and cold-boot marker. The reset-vector tail exposes a stable build date and
+  PC-compatible model identifier at the conventional physical addresses.
+
+### M53 — Text video BIOS
+- **Goal:** Provide the complete INT 10h text-mode contract expected by period
+  software for the installed 80x25 CGA adapter.
+- **Build:** Implement mode set/query, cursor shape and position, active-page
+  selection, scrolling, character/attribute read and write, and teletype
+  handling for CR, LF, backspace, wrapping, scrolling, and the hardware cursor.
+- **Don't:** Claim graphics or 40-column modes before the CGA device renders
+  them; let BDA state diverge from CRTC and VRAM state.
+- **Tests:** Guest-call every supported function, verify register/flag contracts,
+  compare BDA, CRTC, and VRAM state, and exercise every screen edge.
+
+### M54 — Keyboard BIOS
+- **Goal:** Behave like an XT keyboard BIOS under typing, editing, and modifier
+  use rather than exposing a one-key bootstrap latch.
+- **Build:** Replace the private latch with the canonical BDA circular buffer;
+  track Shift, Ctrl, Alt, Caps Lock, Num Lock, and Scroll Lock; implement INT 16h
+  read, peek, shift-status, and buffer insertion; and recognize Ctrl-Alt-Del.
+- **Don't:** Invent enhanced-keyboard scan codes while the emulated device is an
+  83-key XT keyboard; drop queued keys without the documented overflow policy.
+- **Tests:** Buffer wrap/full behavior, make/break transitions, modifier and lock
+  translation, blocking reads, flag preservation, and warm-reboot chord.
+
+### M55 — Floppy disk BIOS
+- **Goal:** Complete the INT 13h interface for the installed read-only floppy
+  subsystem and expose accurate geometry and status to operating systems.
+- **Build:** Add last-status, verify, drive-parameter, and media-status services;
+  validate CHS/count requests and DMA boundaries; split legal reads across
+  tracks when required; and return write-protect for write/format operations
+  until hardware support exists.
+- **Don't:** Special-case DOS buffers, silently wrap DMA pages, or report fixed
+  geometry independent of mounted media.
+- **Tests:** Every supported image geometry, status persistence, track crossing,
+  DMA-boundary rejection, invalid CHS, no media, write protection, and exact
+  multi-sector data integrity through FDC, DMA, and IRQ6.
+
+### M56 — Time, system, and bootstrap BIOS
+- **Goal:** Finish the machine lifecycle contracts used for clocks, reboot, and
+  boot failure handling.
+- **Build:** Implement INT 1Ah tick set/get with midnight rollover, INT 19h
+  bootstrap restart, INT 18h no-boot path, warm/cold POST selection through the
+  BDA marker, Ctrl-Alt-Del integration, and a documented hardware-backed INT 15h
+  subset. Retain accurate absent-device results for INT 14h and INT 17h.
+- **Don't:** Advertise an RTC, extended memory, or AT services that the machine
+  lacks; make reboot depend on host-side reset shortcuts.
+- **Tests:** Midnight transition, tick set/get, cold and warm POST differences,
+  failed and successful reboot, preserved RAM where appropriate, and stable
+  unsupported-service results.
+
+### M57 — System BIOS 1.0 qualification
+- **Goal:** Freeze a documented, reproducible firmware release suitable as the
+  bundled default for Sector Zero machines.
+- **Build:** Add a guest-side clean-room BIOS exerciser, finalize ROM naming and
+  version strings, checksum the declared ROM region, document every supported
+  interrupt function and BDA field, and run the DOS 2.0 then DOS 4.0 smoke suite
+  as compatibility qualification rather than as the BIOS specification.
+- **Don't:** Declare success from a prompt alone; bundle third-party operating
+  system media without a separate distribution and trademark review.
+- **Tests:** Guest register/flag/BDA conformance, full POST and service regression,
+  deterministic ROM reproduction/checksum, `VER`/`DIR`/file reads, keyboard
+  editing, timer progress, and warm/cold reboot under bounded execution.
 
 The intended dependency chain is now explicit:
 
 ```
 CPU completeness → scheduling/memory → interrupts/timer → video/keyboard
-                 → DMA/floppy → BIOS diagnostics → boot sector → DOS 2 → DOS 4
+                 → DMA/floppy → BIOS diagnostics → boot sector → BIOS 1.0
+                 → DOS 2 qualification → DOS 4 qualification
 ```
 
 The Microsoft MS-DOS 1.25/2.0/4.0 source repository is MIT-licensed, making it a

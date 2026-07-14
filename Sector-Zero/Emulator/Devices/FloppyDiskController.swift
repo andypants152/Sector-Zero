@@ -60,6 +60,16 @@ struct FloppyDiskControllerSnapshot: Equatable, Sendable {
     let dmaRequestActive: Bool
     let mediaGeometry: FloppyDiskGeometry?
     let mediaByteCount: Int
+    let recentReads: [FloppyReadTrace]
+}
+
+struct FloppyReadTrace: Equatable, Sendable {
+    let cylinder: UInt8
+    let head: UInt8
+    let sector: UInt8
+    let endOfTrack: UInt8
+    let dmaAddress: UInt32
+    let byteCount: Int
 }
 
 /// Intel 8272/NEC 765 subset behind the original PC floppy ports. The first
@@ -117,6 +127,8 @@ final class FloppyDiskController: IOPortDevice {
     private var pendingInterrupts: [(status: UInt8, cylinder: UInt8)] = []
     private var cylinders = Array(repeating: UInt8(0), count: 4)
     private var specifyBytes: (UInt8, UInt8) = (0, 0)
+    private var recentReads: [FloppyReadTrace] = []
+    private static let maximumRecordedReads = 128
 
     init(
         interruptController: ProgrammableInterruptController,
@@ -163,7 +175,8 @@ final class FloppyDiskController: IOPortDevice {
             pendingInterruptCount: pendingInterrupts.count,
             dmaRequestActive: dmaRequestActive,
             mediaGeometry: media?.geometry,
-            mediaByteCount: media?.bytes.count ?? 0
+            mediaByteCount: media?.bytes.count ?? 0,
+            recentReads: recentReads
         )
     }
 
@@ -186,6 +199,7 @@ final class FloppyDiskController: IOPortDevice {
         pendingInterrupts.removeAll()
         cylinders = Array(repeating: 0, count: 4)
         specifyBytes = (0, 0)
+        recentReads.removeAll(keepingCapacity: true)
     }
 
     func readByte(from port: UInt16) -> UInt8 {
@@ -416,6 +430,18 @@ final class FloppyDiskController: IOPortDevice {
                 sector: Int(id.sector)
             ))
         }
+        let dma = dmaController.snapshot.channel2
+        if recentReads.count == Self.maximumRecordedReads {
+            recentReads.removeFirst()
+        }
+        recentReads.append(FloppyReadTrace(
+            cylinder: cylinder,
+            head: head,
+            sector: sector,
+            endOfTrack: endOfTrack,
+            dmaAddress: dma.physicalAddress,
+            byteCount: Int(dma.currentCount) + 1
+        ))
         readExecution = ReadExecution(
             drive: drive,
             bytes: transferBytes,

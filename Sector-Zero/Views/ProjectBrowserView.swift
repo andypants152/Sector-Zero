@@ -16,19 +16,25 @@ struct ProjectBrowserView: View {
     @State private var projectPendingDeletion: RecentProject?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            title
-            actions
-            currentProjectSummary
-            recentProjects
-            if !isCompact {
-                Spacer(minLength: 0)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                brand
+                primaryActions
+
+                if let project = workspace.currentProject {
+                    activeMachine(project)
+                    machineSetup(project)
+                } else {
+                    noMachineCard
+                }
+
+                recentProjects
             }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(18)
-        .frame(width: isCompact ? nil : 286, alignment: .topLeading)
-        .frame(maxWidth: isCompact ? .infinity : nil, alignment: .topLeading)
-        .frame(maxHeight: isCompact ? nil : .infinity, alignment: .topLeading)
+        .frame(width: isCompact ? nil : 284)
+        .frame(maxWidth: isCompact ? .infinity : nil, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.sectorSidebar)
         .sheet(isPresented: $isShowingNewProject) {
             NewProjectSheet(workspace: workspace)
@@ -36,10 +42,21 @@ struct ProjectBrowserView: View {
         .fileImporter(
             isPresented: $isImportingProject,
             allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            openImportedProject(result)
-        }
+            allowsMultipleSelection: false,
+            onCompletion: openImportedProject
+        )
+        .fileImporter(
+            isPresented: $isImportingFirmware,
+            allowedContentTypes: [.data, .item],
+            allowsMultipleSelection: false,
+            onCompletion: openImportedFirmware
+        )
+        .fileImporter(
+            isPresented: $isImportingDiskImage,
+            allowedContentTypes: [.data, .item],
+            allowsMultipleSelection: false,
+            onCompletion: openImportedDiskImage
+        )
         .alert("Delete Machine?", isPresented: isConfirmingDeletion) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -48,190 +65,252 @@ struct ProjectBrowserView: View {
                 }
             }
         } message: {
-            Text("This will permanently delete \(projectPendingDeletion?.projectName ?? "this machine") and its files.")
+            Text("This permanently deletes \(projectPendingDeletion?.projectName ?? "this machine") and every file in its package.")
         }
     }
 
-    private var title: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("MACHINES")
-                .font(.sectorMono(12, weight: .semibold))
-                .tracking(1.8)
-                .foregroundStyle(Color.sectorMutedText)
-            Text("Sector Zero")
-                .font(.system(size: 22, weight: .semibold, design: .default))
-                .foregroundStyle(Color.sectorText)
+    private var brand: some View {
+        HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.sectorSelection)
+                Image(systemName: "cpu")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(Color.sectorRun)
+            }
+            .frame(width: 38, height: 38)
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.sectorStrongBorder, lineWidth: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SECTOR ZERO")
+                    .font(.sectorMono(13, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(Color.sectorHeading)
+                Text("8086 machine lab")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.sectorMutedText)
+            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sector Zero, 8086 machine lab")
     }
 
-    private var actions: some View {
-        VStack(spacing: 8) {
+    private var primaryActions: some View {
+        HStack(spacing: 8) {
             Button {
                 isShowingNewProject = true
             } label: {
-                Label("Create New Machine", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Label("NEW", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(SectorToolbarButtonStyle(tint: .sectorRun, isProminent: true))
+            .help("Create a new machine")
+            .accessibilityIdentifier("newMachineButton")
 
             Button {
                 openExistingProject()
             } label: {
-                Label("Open Existing Machine", systemImage: "folder")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Label("OPEN", systemImage: "folder")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(SectorToolbarButtonStyle())
+            .help("Open an existing Sector Zero machine")
+            .accessibilityIdentifier("openMachineButton")
         }
     }
 
-    @ViewBuilder
-    private var currentProjectSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("CURRENT MACHINE")
-                .font(.sectorMono(11, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(Color.sectorMutedText)
+    private func activeMachine(_ project: SectorZeroProject) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectorSectionLabel(title: "ACTIVE MACHINE", systemImage: "power")
 
-            if let project = workspace.currentProject {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "desktopcomputer")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.sectorRun)
+                    .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
                     Text(project.projectName)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.sectorText)
+                        .lineLimit(1)
                     Text(project.projectURL.deletingLastPathComponent().path)
-                        .font(.sectorMono(11, weight: .regular))
+                        .font(.sectorMono(10, weight: .regular))
                         .foregroundStyle(Color.sectorMutedText)
                         .lineLimit(2)
+                        .truncationMode(.middle)
                 }
-                firmwareRow(for: project)
-                diskImageRow(for: project)
-            } else {
-                Text("No machine open")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.sectorMutedText)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(12)
+            .sectorCard(fill: .sectorSelection)
         }
-        .padding(.top, 4)
     }
 
-    private var recentProjects: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("RECENT")
-                .font(.sectorMono(11, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(Color.sectorMutedText)
+    private func machineSetup(_ project: SectorZeroProject) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectorSectionLabel(title: "MACHINE SETUP", systemImage: "slider.horizontal.3")
 
-            if workspace.recentProjects.isEmpty {
-                Text("Recently opened machines will appear here.")
+            VStack(spacing: 0) {
+                firmwareRow(for: project)
+                Divider().overlay(Color.sectorBorder)
+                diskImageRow(for: project)
+            }
+            .sectorCard()
+        }
+    }
+
+    private var noMachineCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectorSectionLabel(title: "GET STARTED", systemImage: "sparkles")
+            VStack(alignment: .leading, spacing: 7) {
+                Text("No machine is open")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.sectorText)
+                Text("Create a machine package or open one from disk to begin.")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.sectorMutedText)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(workspace.recentProjects) { project in
-                        HStack(spacing: 8) {
-                            Button {
-                                workspace.openRecentProject(project)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(project.projectName)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(Color.sectorText)
-                                    Text(project.projectURL.deletingLastPathComponent().path)
-                                        .font(.sectorMono(10, weight: .regular))
-                                        .foregroundStyle(Color.sectorMutedText)
-                                        .lineLimit(1)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.plain)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sectorCard()
+        }
+    }
 
-                            Button(role: .destructive) {
-                                projectPendingDeletion = project
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .frame(width: 28, height: 28)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.sectorMutedText)
-                            .help("Delete machine")
-                        }
+    private var recentProjects: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectorSectionLabel(title: "RECENT MACHINES", systemImage: "clock")
+
+            if workspace.recentProjects.isEmpty {
+                Text("Machines you open will stay within easy reach here.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.sectorMutedText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(workspace.recentProjects) { project in
+                        recentProjectRow(project)
                     }
                 }
             }
         }
     }
 
-    private func firmwareRow(for project: SectorZeroProject) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("FIRMWARE")
-                    .font(.sectorMono(10, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.sectorMutedText)
-                Text(project.configuredFirmwareURL?.lastPathComponent ?? "None installed")
-                    .font(.sectorMono(11, weight: .regular))
-                    .foregroundStyle(project.configuredFirmwareURL == nil ? Color.sectorAccent : Color.sectorText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+    private func recentProjectRow(_ project: RecentProject) -> some View {
+        let isActive = workspace.currentProject?.projectURL == project.projectURL
+        return HStack(spacing: 6) {
             Button {
-                chooseFirmware()
+                workspace.openRecentProject(project)
             } label: {
-                Label("Choose", systemImage: "memorychip")
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(isActive ? Color.sectorRun : Color.sectorBorder)
+                        .frame(width: 6, height: 6)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(project.projectName)
+                            .font(.system(size: 13, weight: isActive ? .semibold : .medium))
+                            .foregroundStyle(Color.sectorText)
+                        Text(project.projectURL.deletingLastPathComponent().path)
+                            .font(.sectorMono(9, weight: .regular))
+                            .foregroundStyle(Color.sectorMutedText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.leading, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
-            .controlSize(.small)
-            .disabled(workspace.isRunning)
-            .help("Install a ROM image (1–64 KiB, loaded at the top of the F0000h segment)")
-            .accessibilityIdentifier("chooseFirmwareButton")
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(project.projectName)")
+
+            Menu {
+                Button("Delete Machine", systemImage: "trash", role: .destructive) {
+                    projectPendingDeletion = project
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.sectorMutedText)
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Machine actions")
         }
-        .padding(.top, 2)
-        .fileImporter(
-            isPresented: $isImportingFirmware,
-            allowedContentTypes: [.data, .item],
-            allowsMultipleSelection: false
-        ) { result in
-            openImportedFirmware(result)
+        .padding(.trailing, 5)
+        .background(isActive ? Color.sectorSelection : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(isActive ? Color.sectorBorder : Color.clear, lineWidth: 1)
         }
     }
 
-    private func chooseFirmware() {
-        #if os(macOS)
-        let panel = NSOpenPanel()
-        panel.title = "Choose Firmware Image"
-        panel.prompt = "Choose"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+    private func firmwareRow(for project: SectorZeroProject) -> some View {
+        setupRow(
+            title: "Firmware",
+            value: project.configuredFirmwareURL?.lastPathComponent ?? "Built-in BIOS available",
+            systemImage: "memorychip",
+            isMissing: project.configuredFirmwareURL == nil
+        ) {
+            if project.configuredFirmwareURL == nil {
+                Button("Install BIOS") {
+                    workspace.installBuiltInFirmware()
+                }
+                .controlSize(.small)
+                .tint(Color.sectorRun)
+                .disabled(workspace.isRunning)
+                .help("Install Sector Zero’s clean-room BIOS")
+                .accessibilityIdentifier("installBuiltInFirmwareButton")
 
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
+                Button {
+                    chooseFirmware()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .controlSize(.small)
+                .tint(Color.sectorHeading)
+                .disabled(workspace.isRunning)
+                .help("Choose a custom ROM image")
+                .accessibilityLabel("Choose custom firmware")
+                .accessibilityIdentifier("chooseFirmwareButton")
+            } else {
+                Menu {
+                    Button("Restore Built-in BIOS", systemImage: "memorychip") {
+                        workspace.installBuiltInFirmware()
+                    }
+                    Button("Choose Custom ROM…", systemImage: "folder") {
+                        chooseFirmware()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(workspace.isRunning)
+                .help("Firmware options")
+                .accessibilityIdentifier("chooseFirmwareButton")
+            }
         }
-
-        workspace.configureFirmware(from: url)
-        #else
-        isImportingFirmware = true
-        #endif
     }
 
     private func diskImageRow(for project: SectorZeroProject) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("FLOPPY A")
-                    .font(.sectorMono(10, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.sectorMutedText)
-                Text(project.configuredDiskImageURL?.lastPathComponent ?? "No disk inserted")
-                    .font(.sectorMono(11, weight: .regular))
-                    .foregroundStyle(project.configuredDiskImageURL == nil ? Color.sectorAccent : Color.sectorText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        setupRow(
+            title: "Floppy A",
+            value: project.configuredDiskImageURL?.lastPathComponent ?? "Empty",
+            systemImage: "externaldrive",
+            isMissing: project.configuredDiskImageURL == nil
+        ) {
             if project.configuredDiskImageURL != nil {
                 Button {
                     workspace.ejectDiskImage()
@@ -239,29 +318,70 @@ struct ProjectBrowserView: View {
                     Image(systemName: "eject")
                 }
                 .controlSize(.small)
+                .tint(Color.sectorHeading)
                 .disabled(workspace.isRunning)
-                .help("Eject floppy image without deleting its package copy")
+                .help("Eject the mounted floppy")
+                .accessibilityLabel("Eject floppy")
                 .accessibilityIdentifier("ejectDiskImageButton")
             }
 
-            Button {
+            Button(project.configuredDiskImageURL == nil ? "Insert" : "Replace") {
                 chooseDiskImage()
-            } label: {
-                Label("Choose", systemImage: "externaldrive")
             }
             .controlSize(.small)
+            .tint(Color.sectorHeading)
             .disabled(workspace.isRunning)
             .help("Install a supported raw floppy image")
             .accessibilityIdentifier("chooseDiskImageButton")
         }
-        .padding(.top, 2)
-        .fileImporter(
-            isPresented: $isImportingDiskImage,
-            allowedContentTypes: [.data, .item],
-            allowsMultipleSelection: false
-        ) { result in
-            openImportedDiskImage(result)
+    }
+
+    private func setupRow<Actions: View>(
+        title: String,
+        value: String,
+        systemImage: String,
+        isMissing: Bool,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isMissing ? Color.sectorAccent : Color.sectorHeading)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.sectorMutedText)
+                Text(value)
+                    .font(.sectorMono(10, weight: .regular))
+                    .foregroundStyle(isMissing ? Color.sectorAccent : Color.sectorText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 4) {
+                actions()
+            }
         }
+        .padding(10)
+    }
+
+    private func chooseFirmware() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Firmware Image"
+        panel.prompt = "Install"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        workspace.configureFirmware(from: url)
+        #else
+        isImportingFirmware = true
+        #endif
     }
 
     private func chooseDiskImage() {
@@ -280,39 +400,6 @@ struct ProjectBrowserView: View {
         #endif
     }
 
-    private func openImportedDiskImage(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            let didStartAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didStartAccess { url.stopAccessingSecurityScopedResource() }
-            }
-            workspace.configureDiskImage(from: url)
-        case .failure(let error):
-            workspace.errorMessage = error.localizedDescription
-        }
-    }
-
-    private func openImportedFirmware(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else {
-                return
-            }
-
-            let didStartAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didStartAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            workspace.configureFirmware(from: url)
-        case .failure(let error):
-            workspace.errorMessage = error.localizedDescription
-        }
-    }
-
     private func openExistingProject() {
         #if os(macOS)
         let panel = NSOpenPanel()
@@ -322,30 +409,37 @@ struct ProjectBrowserView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
 
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         workspace.openProject(at: url)
         #else
         isImportingProject = true
         #endif
     }
 
+    private func openImportedDiskImage(_ result: Result<[URL], Error>) {
+        importSecurityScopedURL(from: result) { workspace.configureDiskImage(from: $0) }
+    }
+
+    private func openImportedFirmware(_ result: Result<[URL], Error>) {
+        importSecurityScopedURL(from: result) { workspace.configureFirmware(from: $0) }
+    }
+
     private func openImportedProject(_ result: Result<[URL], Error>) {
+        importSecurityScopedURL(from: result) { workspace.openProject(at: $0) }
+    }
+
+    private func importSecurityScopedURL(
+        from result: Result<[URL], Error>,
+        action: (URL) -> Void
+    ) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else {
-                return
-            }
-
+            guard let url = urls.first else { return }
             let didStartAccess = url.startAccessingSecurityScopedResource()
             defer {
-                if didStartAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
+                if didStartAccess { url.stopAccessingSecurityScopedResource() }
             }
-            workspace.openProject(at: url)
+            action(url)
         case .failure(let error):
             workspace.errorMessage = error.localizedDescription
         }
@@ -364,4 +458,5 @@ struct ProjectBrowserView: View {
 
 #Preview {
     ProjectBrowserView(workspace: SectorZeroWorkspace())
+        .frame(height: 760)
 }
