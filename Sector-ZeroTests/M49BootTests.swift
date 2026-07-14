@@ -10,7 +10,7 @@ struct M49BootTests {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Project/Firmware/m48-bios.bin")
+            .appendingPathComponent("Project/Firmware/sector-zero-bios-1.0.bin")
     }
 
     private func disk(bootSector: [UInt8]) -> Data {
@@ -86,14 +86,16 @@ struct M49BootTests {
         try missingMedia.loadSystemROM(Data(contentsOf: firmwareURL))
         var result = missingMedia.runSlice(maxInstructions: 30_000)
         #expect(result.stopReason == .halted)
-        #expect(result.snapshot.diagnosticPort.lastCode == 0xE1)
+        #expect(result.snapshot.diagnosticPort.codes.contains(0xE1))
+        #expect(result.snapshot.diagnosticPort.lastCode == 0xE8)
         var screen = String(decoding: result.snapshot.video.cells.map(\.codePoint), as: UTF8.self)
         #expect(screen.contains("BOOT READ FAIL"))
 
         let badSignature = try machine(with: diagnosticBootSector(message: "NO", validSignature: false))
         result = badSignature.runSlice(maxInstructions: 30_000)
         #expect(result.stopReason == .halted)
-        #expect(result.snapshot.diagnosticPort.lastCode == 0xE2)
+        #expect(result.snapshot.diagnosticPort.codes.contains(0xE2))
+        #expect(result.snapshot.diagnosticPort.lastCode == 0xE8)
         screen = String(decoding: result.snapshot.video.cells.map(\.codePoint), as: UTF8.self)
         #expect(screen.contains("BOOT SIGNATURE FAIL"))
     }

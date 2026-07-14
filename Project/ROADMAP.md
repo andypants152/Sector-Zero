@@ -11,7 +11,7 @@ This document is a handoff brief so another contributor (human or AI) can take o
 
 ## Handoff context (read first)
 
-**Status:** M1–M49, M51, and M52 are complete and tested (reset, fetch, decode, execute loop;
+**Status:** M1–M49 and M51–M59 are complete and tested (reset, fetch, decode, execute loop;
 register file; ModR/M; MOV forms incl. r/m,imm, moffs, and sreg; XCHG;
 ADD/ADC/SBB/SUB/CMP incl. immediates; AND/OR/XOR; TEST + accumulator forms;
 conditional jumps; PUSH/POP incl. sreg; CALL/RET near; INC/DEC; LOOP/JCXZ;
@@ -31,7 +31,8 @@ accounting; a 765-compatible read-only floppy path with project media
 mount/eject; and a reproducible clean-room BIOS with POST diagnostics and
 boot-path interrupt services, sector-zero validation/handoff, and deterministic
 debugger stops/traces). M50 remains an open operating-system qualification
-checkpoint; the next implementation milestone is M54 in the System BIOS arc.
+checkpoint. M60 release mechanics are implemented; final DOS 2.0/4.0
+qualification remains pending user-supplied, legally distributable media.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -907,55 +908,37 @@ next gap.
   is pinned against accidental 386 `0F 8x` near-conditionals, which would execute
   as `POP CS` on the emulated 8086.
 
-### M54 — Keyboard BIOS
-- **Goal:** Behave like an XT keyboard BIOS under typing, editing, and modifier
-  use rather than exposing a one-key bootstrap latch.
-- **Build:** Replace the private latch with the canonical BDA circular buffer;
-  track Shift, Ctrl, Alt, Caps Lock, Num Lock, and Scroll Lock; implement INT 16h
-  read, peek, shift-status, and buffer insertion; and recognize Ctrl-Alt-Del.
-- **Don't:** Invent enhanced-keyboard scan codes while the emulated device is an
-  83-key XT keyboard; drop queued keys without the documented overflow policy.
-- **Tests:** Buffer wrap/full behavior, make/break transitions, modifier and lock
-  translation, blocking reads, flag preservation, and warm-reboot chord.
+### M54 — Diagnostic firmware foundation ✅
+- **Completed:** Reproducible 512-byte reset smoke ROM, destructive ROM-write
+  variant, fixed four-byte E9h event protocol, and host decoder.
 
-### M55 — Floppy disk BIOS
-- **Goal:** Complete the INT 13h interface for the installed read-only floppy
-  subsystem and expose accurate geometry and status to operating systems.
-- **Build:** Add last-status, verify, drive-parameter, and media-status services;
-  validate CHS/count requests and DMA boundaries; split legal reads across
-  tracks when required; and return write-protect for write/format operations
-  until hardware support exists.
-- **Don't:** Special-case DOS buffers, silently wrap DMA pages, or report fixed
-  geometry independent of mounted media.
-- **Tests:** Every supported image geometry, status persistence, track crossing,
-  DMA-boundary rejection, invalid CHS, no media, write protection, and exact
-  multi-sector data integrity through FDC, DMA, and IRQ6.
+### M55 — Platform diagnostic ROM ✅
+- **Completed:** Independent selectable direct-hardware suites for RAM/ROM, CGA,
+  PIC/PIT IRQ0, XT keyboard IRQ1, and FDC/DMA/IRQ6. No BIOS routines are shared.
 
-### M56 — Time, system, and bootstrap BIOS
-- **Goal:** Finish the machine lifecycle contracts used for clocks, reboot, and
-  boot failure handling.
-- **Build:** Implement INT 1Ah tick set/get with midnight rollover, INT 19h
-  bootstrap restart, INT 18h no-boot path, warm/cold POST selection through the
-  BDA marker, Ctrl-Alt-Del integration, and a documented hardware-backed INT 15h
-  subset. Retain accurate absent-device results for INT 14h and INT 17h.
-- **Don't:** Advertise an RTC, extended memory, or AT services that the machine
-  lacks; make reboot depend on host-side reset shortcuts.
-- **Tests:** Midnight transition, tick set/get, cold and warm POST differences,
-  failed and successful reboot, preserved RAM where appropriate, and stable
-  unsupported-service results.
+### M56 — Keyboard BIOS ✅
+- **Completed:** Canonical BDA ring buffer, modifier/lock translation,
+  drop-newest overflow, INT 16h AH=00h/01h/02h/05h, and Ctrl-Alt-Del.
 
-### M57 — System BIOS 1.0 qualification
-- **Goal:** Freeze a documented, reproducible firmware release suitable as the
-  bundled default for Sector Zero machines.
-- **Build:** Add a guest-side clean-room BIOS exerciser, finalize ROM naming and
-  version strings, checksum the declared ROM region, document every supported
-  interrupt function and BDA field, and run the DOS 2.0 then DOS 4.0 smoke suite
-  as compatibility qualification rather than as the BIOS specification.
-- **Don't:** Declare success from a prompt alone; bundle third-party operating
-  system media without a separate distribution and trademark review.
-- **Tests:** Guest register/flag/BDA conformance, full POST and service regression,
-  deterministic ROM reproduction/checksum, `VER`/`DIR`/file reads, keyboard
-  editing, timer progress, and warm/cold reboot under bounded execution.
+### M57 — Floppy disk BIOS ✅
+- **Completed:** Standard READ ID and live geometry discovery for every supported
+  image; status/verify/parameters/media services; write protection; track/head
+  crossing; and pre-I/O 64 KiB DMA-window rejection.
+
+### M58 — Time, system, and bootstrap BIOS ✅
+- **Completed:** INT 1Ah get/set and rollover, INT 18h/19h, warm/cold POST with
+  RAM preservation, and an honest INT 15h/AH=88h result.
+
+### M59 — Bootable BIOS conformance image ✅
+- **Completed:** Reproducible two-stage guest image. Stage one loads stage two
+  through INT 13h; stage two validates IVT/BDA and INT 10h/11h/12h/13h/15h/16h/1Ah.
+
+### M60 — System BIOS 1.0 qualification
+- **Implemented:** Canonical `sector-zero-bios-1.0.bin` naming, embedded version,
+  release identity, reproducible zero-sum checksum, bundled-default wiring, and
+  service documentation.
+- **Pending gate:** Bounded DOS 2.0/4.0 `VER`/`DIR`/file-read, keyboard, timer,
+  and reboot qualification using separately supplied media. No OS image is bundled.
 
 The intended dependency chain is now explicit:
 

@@ -89,7 +89,7 @@ struct MachineCondition: Equatable, Sendable {
 @MainActor
 @Observable
 final class SectorZeroWorkspace {
-    private static let builtInFirmwareResourceName = "m48-bios"
+    private static let builtInFirmwareResourceName = "sector-zero-bios-1.0"
     private static let builtInFirmwareResourceExtension = "bin"
     private let recentProjectsKey = "SectorZero.RecentProjects"
     private let runSpeedCapKey = "SectorZero.RunSpeedCap"

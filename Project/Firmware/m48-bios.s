@@ -1,9 +1,11 @@
-// Sector Zero M48 clean-room BIOS and diagnostic ROM.
+// Sector Zero clean-room System BIOS 1.0 (originating at milestone M48).
 // This source uses only documented 8086 instructions and PC-compatible ports.
 
     .code16
     .section __TEXT,__text
-    .org 0xf000
+    // Reserve the upper 8 KiB of the 64 KiB system ROM for executable BIOS
+    // code and tables while keeping the architectural reset vector at FFF0h.
+    .org 0xe000
 
 // Tests may assemble a non-shipping variant that takes one POST failure path.
 // The checked-in artifact and ordinary build always use zero (no injection).
@@ -14,6 +16,12 @@
 // Canonical PC BIOS data-area locations (DS = 0000h).
     .set BDA_EQUIPMENT,    0x0410
     .set BDA_MEMORY_KB,    0x0413
+    .set BDA_KB_FLAGS1,    0x0417
+    .set BDA_KB_FLAGS2,    0x0418
+    .set BDA_KB_HEAD,      0x041a
+    .set BDA_KB_TAIL,      0x041c
+    .set BDA_KB_BUFFER,    0x041e
+    .set BDA_KB_BUFFER_END,0x043e
     .set BDA_DISK_STATUS,  0x0441
     .set BDA_VIDEO_MODE,   0x0449
     .set BDA_COLUMNS,      0x044a
@@ -29,6 +37,8 @@
     .set BDA_TICKS_HIGH,   0x046e
     .set BDA_MIDNIGHT,     0x0470
     .set BDA_WARM_BOOT,    0x0472
+    .set BDA_KB_START,     0x0480
+    .set BDA_KB_END,       0x0482
     .set BDA_KEY_WORD,     0x0490
     .set BDA_KEY_READY,    0x0492
     .set FDC_DONE,         0x0493
@@ -47,6 +57,14 @@
     .set VIDEO_PAGE,       0x04a0
     .set VIDEO_CHARACTER,  0x04a1
     .set VIDEO_DIRECTION,  0x04a2
+    .set DISK_GEOM_SPT,    0x04a3
+    .set DISK_GEOM_HEADS,  0x04a4
+    .set DISK_GEOM_TRACKS, 0x04a5
+    .set REQ_DMA_OFFSET,   0x04a6
+    .set REQ_DMA_PAGE,     0x04a8
+    .set REQ_REMAINING,    0x04a9
+    .set REQ_ORIGINAL,     0x04aa
+    .set POST_WARM_FLAG,   0x0504
 
 bios_entry:
     cli
@@ -55,8 +73,15 @@ bios_entry:
     movw $0x7000, %sp
     movw %ax, %ds
     movw %ax, %es
-
+    cmpw $0x1234, BDA_WARM_BOOT
+    jne bios_cold_entry
+    movb $1, POST_WARM_FLAG
+    movb $0x11, %al
+    jmp bios_entry_report
+bios_cold_entry:
+    movb $0, POST_WARM_FLAG
     movb $0x10, %al
+bios_entry_report:
     outb %al, $0xe9
 
     // Give every interrupt a safe firmware-owned endpoint before installing
@@ -95,10 +120,16 @@ initialize_ivt:
     movw $0xf000, 0x004e
     movw $int14_handler, 0x0050
     movw $0xf000, 0x0052
+    movw $int15_handler, 0x0054
+    movw $0xf000, 0x0056
     movw $int16_handler, 0x0058
     movw $0xf000, 0x005a
     movw $int17_handler, 0x005c
     movw $0xf000, 0x005e
+    movw $int18_handler, 0x0060
+    movw $0xf000, 0x0062
+    movw $int19_handler, 0x0064
+    movw $0xf000, 0x0066
     movw $int1a_handler, 0x0068
     movw $0xf000, 0x006a
 
@@ -131,6 +162,8 @@ video_test_passed:
     outb %al, $0xe9
 
     // RAM diagnostic outside the IVT/BDA clear range.
+    cmpb $0, POST_WARM_FLAG
+    jne memory_test_passed
     .if FORCE_POST_FAILURE == 1
     jmp fail_memory
     .endif
@@ -204,6 +237,12 @@ pic_test_passed:
     movw $0x0021, BDA_EQUIPMENT
     movw $640, BDA_MEMORY_KB
     movb $0, BDA_DISK_STATUS
+    movb $0, BDA_KB_FLAGS1
+    movb $0, BDA_KB_FLAGS2
+    movw $0x001e, BDA_KB_HEAD
+    movw $0x001e, BDA_KB_TAIL
+    movw $0x001e, BDA_KB_START
+    movw $0x003e, BDA_KB_END
     movb $3, BDA_VIDEO_MODE
     movw $80, BDA_COLUMNS
     movw $0x1000, BDA_PAGE_SIZE
@@ -243,7 +282,8 @@ pic_test_passed:
     movb $0xaa, %al
     outb %al, $0xe9
 
-    // M49 bootstrap: read drive 0, cylinder 0, head 0, sector 1 through the
+bootstrap:
+    // Read drive 0, cylinder 0, head 0, sector 1 through the
     // ordinary INT 13h/FDC/DMA path, validate 55AAh, then establish the
     // documented Sector Zero boot contract before a far transfer.
     movb $0xb0, %al
@@ -292,10 +332,7 @@ boot_signature_failure:
 boot_failure:
     outb %al, $0xe9
     call print_string
-boot_failure_halt:
-    sti
-    hlt
-    jmp boot_failure_halt
+    int $0x18
 
 fail_memory:
     movb $0xf1, %al
@@ -357,14 +394,137 @@ fdc_sense_loop:
     popw %ax
     ret
 
+// Discover mounted-media geometry with SEEK plus READ ID. The controller's
+// deterministic READ ID rotation returns the final sector number on a track.
+fdc_detect_geometry:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    movw $0x03f7, %dx
+    inb %dx, %al
+    testb $0x80, %al
+    jnz fdc_geometry_failed
+    movb $79, %ch
+    xorb %dh, %dh
+    call fdc_probe_id
+    jc fdc_geometry_40_track
+    movb $80, DISK_GEOM_TRACKS
+    jmp fdc_geometry_probe_heads
+fdc_geometry_40_track:
+    movb $39, %ch
+    xorb %dh, %dh
+    call fdc_probe_id
+    jc fdc_geometry_failed
+    movb $40, DISK_GEOM_TRACKS
+fdc_geometry_probe_heads:
+    movb DISK_GEOM_SPT, %al
+    movb %al, REQ_EOT
+    movb DISK_GEOM_TRACKS, %ch
+    decb %ch
+    movb $1, %dh
+    call fdc_probe_id
+    movb REQ_EOT, %al
+    movb %al, DISK_GEOM_SPT
+    jc fdc_geometry_one_head
+    movb $2, DISK_GEOM_HEADS
+    jmp fdc_geometry_done
+fdc_geometry_one_head:
+    movb $1, DISK_GEOM_HEADS
+fdc_geometry_done:
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    clc
+    ret
+fdc_geometry_failed:
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    stc
+    ret
+
+// Probe CH cylinder and DH head. Return CF clear and cache sectors/track when
+// the standard READ ID result is successful; consume every result byte.
+fdc_probe_id:
+    movb %ch, REQ_CYLINDER
+    movb %dh, REQ_HEAD
+    movb $0, FDC_DONE
+    movw $0x03f5, %dx
+    movb $0x0f, %al
+    outb %al, %dx
+    movb REQ_HEAD, %al
+    shlb $1, %al
+    shlb $1, %al
+    outb %al, %dx
+    movb REQ_CYLINDER, %al
+    outb %al, %dx
+    sti
+1:
+    cmpb $0, FDC_DONE
+    jne 2f
+    nop
+    jmp 1b
+2:
+    cli
+    movb $0x08, %al
+    outb %al, %dx
+    inb %dx, %al
+    inb %dx, %al
+
+    movb $0, FDC_DONE
+    movb $0x0a, %al
+    outb %al, %dx
+    movb REQ_HEAD, %al
+    shlb $1, %al
+    shlb $1, %al
+    outb %al, %dx
+    sti
+1:
+    cmpb $0, FDC_DONE
+    jne 2f
+    nop
+    jmp 1b
+2:
+    cli
+    inb %dx, %al
+    movb %al, %bl
+    andb $0xc0, %bl
+    inb %dx, %al
+    orb %al, %bl
+    inb %dx, %al
+    orb %al, %bl
+    inb %dx, %al
+    inb %dx, %al
+    inb %dx, %al
+    movb %al, DISK_GEOM_SPT
+    inb %dx, %al
+    testb %bl, %bl
+    jnz 1f
+    clc
+    ret
+1:
+    stc
+    ret
+
 irq0_handler:
     pushw %ax
     pushw %ds
     xorw %ax, %ax
     movw %ax, %ds
     incw BDA_TICKS_LOW
-    jnz irq0_eoi
+    jnz irq0_check_rollover
     incw BDA_TICKS_HIGH
+irq0_check_rollover:
+    cmpw $0x0018, BDA_TICKS_HIGH
+    jb irq0_eoi
+    cmpw $0x00b0, BDA_TICKS_LOW
+    jb irq0_eoi
+    movw $0, BDA_TICKS_LOW
+    movw $0, BDA_TICKS_HIGH
+    incb BDA_MIDNIGHT
 irq0_eoi:
     movb $0x20, %al
     outb %al, $0x20
@@ -380,23 +540,186 @@ irq1_handler:
     pushw %ds
     inb $0x60, %al
     movb %al, %dl
-    testb $0x80, %al
-    jnz irq1_acknowledge
-    cmpb $0x39, %al
-    ja irq1_acknowledge
-    movw $0xf000, %ax
-    movw %ax, %ds
-    movw $scan_code_ascii, %bx
-    movb %dl, %al
-    xlatb
-    testb %al, %al
-    jz irq1_acknowledge
-    movb %al, %cl
-    movb %dl, %ch
     xorw %ax, %ax
     movw %ax, %ds
-    movw %cx, BDA_KEY_WORD
-    movb $1, BDA_KEY_READY
+    testb $0x80, %dl
+    jz irq1_make
+    andb $0x7f, %dl
+    cmpb $0x2a, %dl
+    jne 1f
+    andb $0xfd, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x36, %dl
+    jne 1f
+    andb $0xfe, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x1d, %dl
+    jne 1f
+    andb $0xfb, BDA_KB_FLAGS1
+    andb $0xfe, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x38, %dl
+    jne 1f
+    andb $0xf7, BDA_KB_FLAGS1
+    andb $0xfd, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x3a, %dl
+    jne 1f
+    andb $0xbf, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x45, %dl
+    jne 1f
+    andb $0xdf, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x46, %dl
+    je 1f
+    jmp irq1_acknowledge
+1:
+    andb $0xef, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+
+irq1_make:
+    cmpb $0x2a, %dl
+    jne 1f
+    orb $0x02, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x36, %dl
+    jne 1f
+    orb $0x01, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x1d, %dl
+    jne 1f
+    orb $0x04, BDA_KB_FLAGS1
+    orb $0x01, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x38, %dl
+    jne 1f
+    orb $0x08, BDA_KB_FLAGS1
+    orb $0x02, BDA_KB_FLAGS2
+    jmp irq1_acknowledge
+1:
+    cmpb $0x3a, %dl
+    jne 1f
+    testb $0x40, BDA_KB_FLAGS2
+    jz 2f
+    jmp irq1_acknowledge
+2:
+    orb $0x40, BDA_KB_FLAGS2
+    xorb $0x40, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x45, %dl
+    jne 1f
+    testb $0x20, BDA_KB_FLAGS2
+    jz 2f
+    jmp irq1_acknowledge
+2:
+    orb $0x20, BDA_KB_FLAGS2
+    xorb $0x20, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+1:
+    cmpb $0x46, %dl
+    jne irq1_regular_make
+    testb $0x10, BDA_KB_FLAGS2
+    jz 2f
+    jmp irq1_acknowledge
+2:
+    orb $0x10, BDA_KB_FLAGS2
+    xorb $0x10, BDA_KB_FLAGS1
+    jmp irq1_acknowledge
+
+irq1_regular_make:
+    // Ctrl-Alt-Del requests a firmware warm restart through the canonical
+    // BDA marker. The later lifecycle milestone distinguishes warm POST work.
+    cmpb $0x53, %dl
+    jne 1f
+    movb BDA_KB_FLAGS1, %al
+    andb $0x0c, %al
+    cmpb $0x0c, %al
+    jne 1f
+    movw $0x1234, BDA_WARM_BOOT
+    ljmp $0xf000, $bios_entry
+1:
+    cmpb $0x53, %dl
+    jbe 1f
+    jmp irq1_acknowledge
+1:
+    xorw %bx, %bx
+    movb %dl, %bl
+    movb %cs:scan_code_ascii(%bx), %al
+    movb BDA_KB_FLAGS1, %ah
+    testb $0x08, %ah
+    jz irq1_not_alt
+    xorb %al, %al
+    jmp irq1_enqueue
+irq1_not_alt:
+    testb $0x04, %ah
+    jz irq1_not_control
+    cmpb $'a', %al
+    jb irq1_enqueue
+    cmpb $'z', %al
+    ja irq1_enqueue
+    andb $0x1f, %al
+    jmp irq1_enqueue
+irq1_not_control:
+    // Caps Lock affects letters and composes with Shift as an XOR.
+    cmpb $'a', %al
+    jb irq1_nonletter
+    cmpb $'z', %al
+    ja irq1_nonletter
+    movb %ah, %cl
+    andb $0x03, %cl
+    jz 1f
+    movb $1, %cl
+    jmp 2f
+1:
+    xorb %cl, %cl
+2:
+    testb $0x40, %ah
+    jz 3f
+    xorb $1, %cl
+3:
+    testb %cl, %cl
+    jz irq1_enqueue
+    subb $32, %al
+    jmp irq1_enqueue
+irq1_nonletter:
+    testb $0x03, %ah
+    jz irq1_keypad
+    movb %cs:scan_code_shifted(%bx), %al
+irq1_keypad:
+    // The XT numeric keypad produces ASCII only while Num Lock is active;
+    // navigation forms retain a zero ASCII byte and their scan code.
+    cmpb $0x47, %dl
+    jb irq1_enqueue
+    cmpb $0x53, %dl
+    ja irq1_enqueue
+    testb $0x20, %ah
+    jz 1f
+    movb %cs:scan_code_numeric(%bx), %al
+    jmp irq1_enqueue
+1:
+    xorb %al, %al
+irq1_enqueue:
+    testb %al, %al
+    jnz 1f
+    testb $0x08, BDA_KB_FLAGS1
+    jnz 1f
+    cmpb $0x47, %dl
+    jb irq1_acknowledge
+1:
+    movb %al, %cl
+    movb %dl, %ch
+    call keyboard_enqueue
 irq1_acknowledge:
     inb $0x61, %al
     orb $0x80, %al
@@ -411,6 +734,29 @@ irq1_acknowledge:
     popw %bx
     popw %ax
     iretw
+
+// Enqueue CX as scan:ASCII in the canonical 16-word BDA circular buffer.
+// Full buffers retain the oldest keys and drop the newest key deterministically.
+keyboard_enqueue:
+    pushw %ax
+    pushw %bx
+    pushw %dx
+    movw BDA_KB_TAIL, %bx
+    movw %bx, %dx
+    addw $2, %dx
+    cmpw BDA_KB_END, %dx
+    jb 1f
+    movw BDA_KB_START, %dx
+1:
+    cmpw BDA_KB_HEAD, %dx
+    je 1f
+    movw %cx, 0x0400(%bx)
+    movw %dx, BDA_KB_TAIL
+1:
+    popw %dx
+    popw %bx
+    popw %ax
+    ret
 
 irq6_handler:
     pushw %ax
@@ -449,6 +795,44 @@ int14_handler:
 int17_handler:
     movb $0x01, %ah
     iretw
+
+// INT 15h/AH=88h truthfully reports no extended memory on this 640 KiB XT.
+// AT-only waits, configuration tables, and protected-mode services are absent.
+int15_handler:
+    pushw %bp
+    movw %sp, %bp
+    cmpb $0x88, %ah
+    jne int15_unsupported
+    xorw %ax, %ax
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+int15_unsupported:
+    movb $0x86, %ah
+    orb $0x01, 6(%bp)
+    popw %bp
+    iretw
+
+// INT 18h is the ROM no-boot endpoint. It is deliberately terminal but keeps
+// interrupts enabled so timer state remains a truthful running machine clock.
+int18_handler:
+    movb $0xe8, %al
+    outb %al, $0xe9
+int18_halt:
+    sti
+    hlt
+    jmp int18_halt
+
+// INT 19h discards the caller's stack context and restarts the ordinary BIOS
+// bootstrap path. It never bypasses INT 13h or boot-signature validation.
+int19_handler:
+    cli
+    xorw %ax, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %ss
+    movw $0x7000, %sp
+    jmp bootstrap
 
 // INT 10h: complete text-mode services for the installed 80x25 CGA adapter.
 int10_handler:
@@ -1156,7 +1540,7 @@ video_scroll_down_blank_cell:
 video_scroll_done:
     ret
 
-// INT 16h: AH=00h waits and consumes a key; AH=01h peeks and returns ZF.
+// INT 16h: classic XT read, peek, shift-status, and buffer-insertion services.
 int16_handler:
     pushw %bp
     movw %sp, %bp
@@ -1168,46 +1552,95 @@ int16_handler:
     je int16_wait
     cmpb $0x01, %ah
     je int16_check
+    cmpb $0x02, %ah
+    je int16_shift_status
+    cmpb $0x05, %ah
+    je int16_insert
     movb $0x86, %ah
     orb $0x01, 6(%bp)
     jmp int16_done
 int16_wait:
     sti
 int16_wait_loop:
-    cmpb $0, BDA_KEY_READY
+    movw BDA_KB_HEAD, %bx
+    cmpw BDA_KB_TAIL, %bx
     jne int16_take
     hlt
     jmp int16_wait_loop
 int16_take:
-    movw BDA_KEY_WORD, %ax
-    movb $0, BDA_KEY_READY
+    movw 0x0400(%bx), %ax
+    addw $2, %bx
+    cmpw BDA_KB_END, %bx
+    jb 1f
+    movw BDA_KB_START, %bx
+1:
+    movw %bx, BDA_KB_HEAD
     andb $0xbe, 6(%bp)
     jmp int16_done
 int16_check:
-    cmpb $0, BDA_KEY_READY
+    movw BDA_KB_HEAD, %bx
+    cmpw BDA_KB_TAIL, %bx
     je int16_empty
-    movw BDA_KEY_WORD, %ax
+    movw 0x0400(%bx), %ax
     andb $0xbe, 6(%bp)
     jmp int16_done
 int16_empty:
     orb $0x40, 6(%bp)
+    jmp int16_done
+int16_shift_status:
+    movb BDA_KB_FLAGS1, %al
+    andb $0xfe, 6(%bp)
+    jmp int16_done
+int16_insert:
+    movw BDA_KB_TAIL, %bx
+    movw %bx, %ax
+    addw $2, %ax
+    cmpw BDA_KB_END, %ax
+    jb 1f
+    movw BDA_KB_START, %ax
+1:
+    cmpw BDA_KB_HEAD, %ax
+    je int16_insert_full
+    movw %cx, 0x0400(%bx)
+    movw %ax, BDA_KB_TAIL
+    xorb %al, %al
+    andb $0xfe, 6(%bp)
+    jmp int16_done
+int16_insert_full:
+    movb $1, %al
+    andb $0xfe, 6(%bp)
 int16_done:
     popw %bx
     popw %ds
     popw %bp
     iretw
 
-// INT 1Ah: AH=00h returns the 32-bit BIOS tick count in CX:DX.
+// INT 1Ah: get/set the 32-bit PC tick count and consume midnight rollover.
 int1a_handler:
     pushw %bp
     movw %sp, %bp
     pushw %ds
-    xorw %dx, %dx
-    movw %dx, %ds
+    pushw %ax
+    xorw %ax, %ax
+    movw %ax, %ds
+    popw %ax
     cmpb $0, %ah
-    jne int1a_unsupported
+    je int1a_get
+    cmpb $1, %ah
+    je int1a_set
+    jmp int1a_unsupported
+int1a_get:
     movw BDA_TICKS_LOW, %dx
     movw BDA_TICKS_HIGH, %cx
+    movb BDA_MIDNIGHT, %al
+    movb $0, BDA_MIDNIGHT
+    xorb %ah, %ah
+    andb $0xfe, 6(%bp)
+    jmp int1a_done
+int1a_set:
+    movw %dx, BDA_TICKS_LOW
+    movw %cx, BDA_TICKS_HIGH
+    movb $0, BDA_MIDNIGHT
     xorw %ax, %ax
     andb $0xfe, 6(%bp)
     jmp int1a_done
@@ -1219,26 +1652,174 @@ int1a_done:
     popw %bp
     iretw
 
-// INT 13h: AH=00h controller reset; AH=02h read CHS sectors to ES:BX.
+// INT 13h: read-only floppy services with live media geometry qualification.
 int13_handler:
     pushw %bp
     movw %sp, %bp
     cmpb $0, %ah
-    je int13_reset
+    jne 1f
+    jmp int13_reset
+1:
+    cmpb $1, %ah
+    jne 1f
+    jmp int13_status
+1:
     cmpb $2, %ah
-    je int13_read
+    jne 1f
+    jmp int13_read
+1:
+    cmpb $3, %ah
+    je int13_write_protected
+    cmpb $4, %ah
+    je int13_verify
+    cmpb $5, %ah
+    je int13_write_protected
+    cmpb $8, %ah
+    je int13_parameters
+    cmpb $0x15, %ah
+    jne 1f
+    jmp int13_disk_type
+1:
+    cmpb $0x16, %ah
+    jne 1f
+    jmp int13_media_status
+1:
     movb $1, %ah
     xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
     orb $1, 6(%bp)
+    popw %bp
+    iretw
+
+int13_status:
+    movb BDA_DISK_STATUS, %ah
+    testb %ah, %ah
+    jz 1f
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+1:
+    andb $0xfe, 6(%bp)
     popw %bp
     iretw
 
 int13_reset:
     call fdc_reset_and_sense
     xorw %ax, %ax
+    movb %ah, BDA_DISK_STATUS
     andb $0xfe, 6(%bp)
     popw %bp
     iretw
+
+int13_write_protected:
+    movb $0x03, %ah
+    xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+
+int13_verify:
+    call int13_validate_request
+    jnc 1f
+    jmp int13_service_bad_request
+1:
+    xorw %ax, %ax
+    movb %ah, BDA_DISK_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_parameters:
+    cmpb $0, %dl
+    jne int13_service_bad_request
+    call fdc_detect_geometry
+    jc int13_service_not_ready
+    xorw %ax, %ax
+    xorw %bx, %bx
+    xorw %cx, %cx
+    movb DISK_GEOM_TRACKS, %ch
+    decb %ch
+    movb DISK_GEOM_SPT, %cl
+    xorw %dx, %dx
+    movb DISK_GEOM_HEADS, %dh
+    decb %dh
+    movb $1, %dl
+    movb $0, BDA_DISK_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_disk_type:
+    cmpb $0, %dl
+    jne int13_service_bad_request
+    movw $0x03f7, %dx
+    inb %dx, %al
+    testb $0x80, %al
+    jnz int13_service_not_ready
+    movb $1, %ah
+    movb $0, BDA_DISK_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_media_status:
+    cmpb $0, %dl
+    jne int13_service_bad_request
+    movw $0x03f7, %dx
+    inb %dx, %al
+    testb $0x80, %al
+    jnz int13_service_media_changed
+    xorw %ax, %ax
+    movb %ah, BDA_DISK_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+int13_service_media_changed:
+    movb $0x06, %ah
+    xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+int13_service_not_ready:
+    movb $0x80, %ah
+    xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+int13_service_bad_request:
+    movb $1, %ah
+    xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+
+// Validate drive, count, CHS, and media against geometry discovered with
+// standard FDC commands. Register inputs are preserved.
+int13_validate_request:
+    cmpb $0, %dl
+    jne 9f
+    testb %al, %al
+    jz 9f
+    call fdc_detect_geometry
+    jc 9f
+    cmpb DISK_GEOM_TRACKS, %ch
+    jae 9f
+    cmpb DISK_GEOM_HEADS, %dh
+    jae 9f
+    movb %cl, %ah
+    andb $0x3f, %ah
+    jz 9f
+    cmpb DISK_GEOM_SPT, %ah
+    ja 9f
+    clc
+    ret
+9:
+    stc
+    ret
 
 int13_read:
     pushw %bx
@@ -1249,43 +1830,26 @@ int13_read:
     pushw %ds
     xorw %si, %si
     movw %si, %ds
-    cmpb $0, %dl
-    je int13_drive_valid
-    jmp int13_bad_request
-int13_drive_valid:
-    testb %al, %al
-    jnz int13_request_valid
+    call int13_validate_request
+    jnc int13_request_valid
     jmp int13_bad_request
 int13_request_valid:
     movb %al, REQ_COUNT
+    movb %al, REQ_ORIGINAL
+    movb %al, REQ_REMAINING
     movb %ch, REQ_CYLINDER
     movb %cl, REQ_SECTOR
+    andb $0x3f, REQ_SECTOR
     movb %dh, REQ_HEAD
     movb %dl, REQ_DRIVE
-    movb %cl, %ah
-    addb REQ_COUNT, %ah
-    decb %ah
-    movb %ah, REQ_EOT
 
-    // Fail synchronously when drive 0 has no mounted medium. The controller's
-    // missing-media result phase has no DMA completion IRQ to wait for.
-    movw $0x03f7, %dx
-    inb %dx, %al
-    testb $0x80, %al
-    jz int13_media_present
-    jmp int13_read_error
-int13_media_present:
-
-    // Compute the terminal count before the DMA page because MUL writes DX:AX.
-    // Keeping the page calculation second preserves DL until port 81h is set.
+    // Compute and validate the complete physical DMA window before issuing
+    // any command. A BIOS request may not wrap a 64 KiB DMA page.
     xorw %ax, %ax
     movb REQ_COUNT, %al
     movw $512, %cx
     mulw %cx
-    decw %ax
     movw %ax, %di
-
-    // Compute the 20-bit ES:BX destination as DMA page DL + address SI.
     movw %es, %dx
     movb $12, %cl
     shrw %cl, %dx
@@ -1295,20 +1859,32 @@ int13_media_present:
     addw %bx, %ax
     adcb $0, %dl
     movw %ax, %si
+    movw %si, REQ_DMA_OFFSET
+    movb %dl, REQ_DMA_PAGE
+    movw %di, %ax
+    decw %ax
+    addw %si, %ax
+    jnc int13_dma_window_valid
+    jmp int13_dma_boundary
+int13_dma_window_valid:
+
+int13_sector_loop:
+    // One sector per controller command naturally spans track/head boundaries
+    // while keeping every DMA transfer and result independently qualified.
 
     movb $0x06, %al
     outb %al, $0x0a
     xorb %al, %al
     outb %al, $0x0c
-    movw %si, %ax
+    movw REQ_DMA_OFFSET, %ax
     outb %al, $0x04
     movb %ah, %al
     outb %al, $0x04
-    movw %di, %ax
+    movw $511, %ax
     outb %al, $0x05
     movb %ah, %al
     outb %al, $0x05
-    movb %dl, %al
+    movb REQ_DMA_PAGE, %al
     outb %al, $0x81
     movb $0x46, %al
     outb %al, $0x0b
@@ -1320,7 +1896,7 @@ int13_media_present:
     movb $0x0c, %al
     outb %al, %dx
     movw $0x03f5, %dx
-    movb $0xe6, %al
+    movb $0x06, %al
     outb %al, %dx
     movb REQ_HEAD, %al
     shlb $1, %al
@@ -1335,7 +1911,7 @@ int13_media_present:
     outb %al, %dx
     movb $2, %al
     outb %al, %dx
-    movb REQ_EOT, %al
+    movb REQ_SECTOR, %al
     outb %al, %dx
     movb $0x1b, %al
     outb %al, %dx
@@ -1366,19 +1942,55 @@ int13_results:
     jnz int13_read_error
     testb %cl, %cl
     jnz int13_read_error
+
+    decb REQ_REMAINING
+    jz int13_read_success
+    addw $512, REQ_DMA_OFFSET
+    incb REQ_SECTOR
+    movb REQ_SECTOR, %al
+    cmpb DISK_GEOM_SPT, %al
+    ja 1f
+    jmp int13_sector_loop
+1:
+    movb $1, REQ_SECTOR
+    incb REQ_HEAD
+    movb REQ_HEAD, %al
+    cmpb DISK_GEOM_HEADS, %al
+    jae 1f
+    jmp int13_sector_loop
+1:
+    movb $0, REQ_HEAD
+    incb REQ_CYLINDER
+    movb REQ_CYLINDER, %al
+    cmpb DISK_GEOM_TRACKS, %al
+    jae 1f
+    jmp int13_sector_loop
+1:
+    jmp int13_bad_request
+
+int13_read_success:
     xorw %ax, %ax
-    movb REQ_COUNT, %al
+    movb REQ_ORIGINAL, %al
+    movb $0, BDA_DISK_STATUS
     andb $0xfe, 6(%bp)
     jmp int13_read_done
 
 int13_bad_request:
     movb $1, %ah
     xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
+    orb $1, 6(%bp)
+    jmp int13_read_done
+int13_dma_boundary:
+    movb $0x09, %ah
+    xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
     orb $1, 6(%bp)
     jmp int13_read_done
 int13_read_error:
     movb $0x20, %ah
     xorb %al, %al
+    movb %ah, BDA_DISK_STATUS
     orb $1, 6(%bp)
 int13_read_done:
     popw %ds
@@ -1391,16 +2003,16 @@ int13_read_done:
     iretw
 
 post_message:
-    .asciz "Sector Zero BIOS M48 - POST PASS"
+    .asciz "Sector Zero BIOS 1.0 - POST PASS"
 failure_message:
-    .asciz "Sector Zero BIOS M48 - POST FAIL"
+    .asciz "Sector Zero BIOS 1.0 - POST FAIL"
 boot_read_failure_message:
     .asciz " - BOOT READ FAIL"
 boot_signature_failure_message:
     .asciz " - BOOT SIGNATURE FAIL"
 
-// Unshifted scan-code set 1. BIOS-visible editing controls retain their ASCII
-// values; modifier and lock keys remain zero until their state is modeled.
+// XT scan-code set 1 translation tables. Modifier handling and buffer logic
+// live above; these are data only and are not shared with diagnostic firmware.
 scan_code_ascii:
     .byte 0, 27, '1', '2', '3', '4', '5', '6'
     .byte '7', '8', '9', '0', '-', '=', 8, 9
@@ -1409,12 +2021,41 @@ scan_code_ascii:
     .byte 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'
     .byte '\'', '`', 0, '\\', 'z', 'x', 'c', 'v'
     .byte 'b', 'n', 'm', ',', '.', '/', 0, '*'
-    .byte 0, ' '
+    .byte 0, ' ', 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0
+scan_code_shifted:
+    .byte 0, 27, '!', '@', '#', '$', '%', '^'
+    .byte '&', '*', '(', ')', '_', '+', 8, 0
+    .byte 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I'
+    .byte 'O', 'P', '{', '}', 13, 0, 'A', 'S'
+    .byte 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':'
+    .byte '"', '~', 0, '|', 'Z', 'X', 'C', 'V'
+    .byte 'B', 'N', 'M', '<', '>', '?', 0, '*'
+    .byte 0, ' ', 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0, 0, 0, 0, 0
+    .byte 0, 0, 0, 0
+scan_code_numeric:
+    .fill 0x47, 1, 0
+    .byte '7', '8', '9', '-', '4', '5', '6', '+'
+    .byte '1', '2', '3', '0', '.'
 
+bios_version_string:
+    .asciz "Sector Zero System BIOS 1.0"
+
+    // The build stamps this byte so the unsigned sum of the declared 64 KiB
+    // ROM region is zero, following the conventional PC option-ROM rule.
+    .org 0xffef
+bios_checksum:
+    .byte 0
     .org 0xfff0
 reset_vector:
     ljmp $0xf000, $bios_entry
-    .ascii "07/13/26"
+    .ascii "07/14/26"
     .byte 0
     .byte 0xff
     .byte 0

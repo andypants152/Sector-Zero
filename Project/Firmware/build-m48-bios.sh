@@ -2,7 +2,7 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-output=${1:-"$script_dir/m48-bios.bin"}
+output=${1:-"$script_dir/sector-zero-bios-1.0.bin"}
 forced_failure=${2:-0}
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/sector-zero-bios.XXXXXX")
 trap 'rm -rf "$temporary_dir"' EXIT HUP INT TERM
@@ -41,6 +41,9 @@ if [ "$forced_failure" = all ]; then
         -module-cache-path "$temporary_dir/module-cache" \
         "$script_dir/extract-mach-o-text.swift" "$@"
     for binary in "$output"/*.bin; do
+        "$swift" -sdk "$macos_sdk" \
+            -module-cache-path "$temporary_dir/stamp-module-cache" \
+            "$script_dir/stamp-bios-checksum.swift" "$binary"
         byte_count=$(wc -c < "$binary" | tr -d ' ')
         if [ "$byte_count" -ne 65536 ]; then
             echo "M48 BIOS must be exactly 65536 bytes; got $byte_count" >&2
@@ -59,6 +62,9 @@ fi
     "$script_dir/extract-mach-o-text.swift" \
     "$temporary_dir/m48-bios.o" \
     "$output"
+"$swift" -sdk "$macos_sdk" \
+    -module-cache-path "$temporary_dir/stamp-module-cache" \
+    "$script_dir/stamp-bios-checksum.swift" "$output"
 
 byte_count=$(wc -c < "$output" | tr -d ' ')
 if [ "$byte_count" -ne 65536 ]; then

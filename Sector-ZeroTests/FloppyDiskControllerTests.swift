@@ -159,6 +159,25 @@ struct FloppyDiskControllerTests {
         #expect(machine.snapshot().floppyController.recentReads.isEmpty)
     }
 
+    @Test("READ ID reports deterministic media geometry through a standard command")
+    func readID() throws {
+        let machine = Machine()
+        try machine.mountFloppyDisk(image(tracks: 40, heads: 2, sectorsPerTrack: 9))
+        enable(machine)
+        drainResetSenseStatuses(machine)
+
+        writeCommand([0x0A, 0x04], to: machine)
+        #expect(readResult(7, from: machine) == [0x04, 0, 0, 0, 1, 9, 2])
+
+        writeCommand([0x0F, 0x00, 79], to: machine)
+        writeCommand([0x08], to: machine)
+        _ = readResult(2, from: machine)
+        writeCommand([0x0A, 0x00], to: machine)
+        let invalid = readResult(7, from: machine)
+        #expect(invalid[0] & 0x40 == 0x40)
+        #expect(invalid[2] & 0x10 == 0x10)
+    }
+
     @Test("Missing media and invalid end-of-track complete with 765 error results")
     func mediaAndBoundsErrors() throws {
         let machine = Machine()

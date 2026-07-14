@@ -24,7 +24,7 @@ struct M48BIOSTests {
     }
 
     private var firmwareURL: URL {
-        firmwareDirectory.appendingPathComponent("m48-bios.bin")
+        firmwareDirectory.appendingPathComponent("sector-zero-bios-1.0.bin")
     }
 
     private func run(_ process: Process) async throws -> Int32 {
@@ -102,7 +102,7 @@ struct M48BIOSTests {
         #expect(snapshot.floppyController.phase == .idle)
         #expect(snapshot.video.modeControl == 0x29)
 
-        let expectedText = Array("Sector Zero BIOS M48 - POST PASS".utf8)
+        let expectedText = Array("Sector Zero BIOS 1.0 - POST PASS".utf8)
         let text = snapshot.video.cells.prefix(expectedText.count).map(\.codePoint)
         #expect(text == expectedText)
     }
@@ -133,7 +133,7 @@ struct M48BIOSTests {
                 decoding: result.snapshot.video.cells.map(\.codePoint),
                 as: UTF8.self
             )
-            #expect(text.contains("Sector Zero BIOS M48 - POST FAIL"))
+            #expect(text.contains("Sector Zero BIOS 1.0 - POST FAIL"))
         }
     }
 
@@ -183,15 +183,18 @@ struct M48BIOSTests {
         try machine.mountFloppyDisk(Data(diskBytes))
 
         machine.postScanCode(0x23) // H make code.
-        _ = machine.runSlice(maxInstructions: 64)
+        _ = machine.runSlice(maxInstructions: 512)
         _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0100))
         _ = callBIOS(0x16, on: machine)
         #expect(machine.cpu.registers[.al] == UInt8(ascii: "h"))
         #expect(machine.cpu.registers[.ah] == 0x23)
         #expect(!machine.cpu.flags[.zero])
+        _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0000))
+        _ = callBIOS(0x16, on: machine) // Consume the key that AH=01h peeked.
+        #expect(machine.cpu.ax == 0x2368)
 
         machine.postScanCode(0x1C) // Enter make code.
-        _ = machine.runSlice(maxInstructions: 64)
+        _ = machine.runSlice(maxInstructions: 512)
         _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0000))
         _ = callBIOS(0x16, on: machine)
         #expect(machine.cpu.registers[.al] == 13)

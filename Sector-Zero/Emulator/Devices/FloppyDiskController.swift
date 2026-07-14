@@ -74,7 +74,7 @@ struct FloppyReadTrace: Equatable, Sendable {
 
 /// Intel 8272/NEC 765 subset behind the original PC floppy ports. The first
 /// milestone implements command/result framing, reset, seek/recalibrate,
-/// sense commands, and DMA-backed READ DATA for drive 0. Disk writes and the
+/// sense and READ ID commands, and DMA-backed READ DATA for drive 0. Disk writes and the
 /// broader diagnostic/format command set remain deliberately unsupported.
 final class FloppyDiskController: IOPortDevice {
     static let digitalOutputPort: UInt16 = 0x3F2
@@ -298,6 +298,7 @@ final class FloppyDiskController: IOPortDevice {
         case 0x06: return 9  // READ DATA
         case 0x07: return 2  // RECALIBRATE
         case 0x08: return 1  // SENSE INTERRUPT STATUS
+        case 0x0A: return 2  // READ ID
         case 0x0F: return 3  // SEEK
         default: return 1
         }
@@ -315,6 +316,8 @@ final class FloppyDiskController: IOPortDevice {
             recalibrate(command)
         case 0x08:
             senseInterruptStatus()
+        case 0x0A:
+            readID(command)
         case 0x0F:
             seek(command)
         default:
@@ -358,6 +361,41 @@ final class FloppyDiskController: IOPortDevice {
         }
         let pending = pendingInterrupts.removeFirst()
         enterResult([pending.status, pending.cylinder], raisesInterrupt: false)
+    }
+
+    private func readID(_ command: [UInt8]) {
+        let driveAndHead = command[1]
+        let drive = driveAndHead & 0x03
+        let head = driveAndHead >> 2 & 0x01
+        let cylinder = cylinders[Int(drive)]
+        guard drive == 0, let media else {
+            enterResult([0x48 | head << 2 | drive, 0x04, 0, cylinder, head, 1, 2], raisesInterrupt: true)
+            return
+        }
+        guard Int(cylinder) < media.geometry.tracks,
+              Int(head) < media.geometry.heads else {
+            enterResult([
+                0x40 | head << 2 | drive,
+                0x04,
+                Int(cylinder) >= media.geometry.tracks ? 0x10 : 0,
+                cylinder,
+                head,
+                1,
+                2,
+            ], raisesInterrupt: true)
+            return
+        }
+        // Rotation is intentionally deterministic: expose the final sector ID
+        // on the track so firmware can qualify media without a private register.
+        enterResult([
+            head << 2 | drive,
+            0,
+            0,
+            cylinder,
+            head,
+            UInt8(media.geometry.sectorsPerTrack),
+            2,
+        ], raisesInterrupt: true)
     }
 
     private func beginReadData(_ command: [UInt8]) {

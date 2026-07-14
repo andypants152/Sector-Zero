@@ -9,7 +9,7 @@ struct M52BIOSFoundationTests {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Project/Firmware/m48-bios.bin")
+            .appendingPathComponent("Project/Firmware/sector-zero-bios-1.0.bin")
     }
 
     private func bootSector() -> Data {
@@ -48,11 +48,10 @@ struct M52BIOSFoundationTests {
 
         #expect(entries.allSatisfy { $0.segment == 0xF000 })
         #expect(entries.allSatisfy { $0.offset != 0 })
-        #expect(entries[0x15] == entries[0x18])
-        #expect(entries[0x10] != entries[0x15])
-        #expect(entries[0x13] != entries[0x15])
-        #expect(entries[0x16] != entries[0x15])
-        #expect(entries[0x1A] != entries[0x15])
+        let fallback = entries[0x1B]
+        for vector in [0x10, 0x13, 0x15, 0x16, 0x18, 0x19, 0x1A] {
+            #expect(entries[vector] != fallback)
+        }
     }
 
     @Test("An unimplemented interrupt returns through the default handler without changing caller state")
@@ -64,7 +63,7 @@ struct M52BIOSFoundationTests {
         let originalAX = machine.cpu.ax
         let originalFlags = machine.cpu.flags
 
-        machine.cpu.acceptInterrupt(type: 0x15, returnCS: returnCS, returnIP: returnIP)
+        machine.cpu.acceptInterrupt(type: 0x1B, returnCS: returnCS, returnIP: returnIP)
         machine.step()
 
         #expect(machine.cpu.cs == returnCS)
@@ -100,7 +99,7 @@ struct M52BIOSFoundationTests {
         let machine = try bootToHandoff()
         let date = try machine.inspectMemory(at: 0xFFFF5, byteCount: 8)
 
-        #expect(String(decoding: date, as: UTF8.self) == "07/13/26")
+        #expect(String(decoding: date, as: UTF8.self) == "07/14/26")
         #expect(machine.bus.readByte(at: 0xFFFFD) == 0)
         #expect(machine.bus.readByte(at: 0xFFFFE) == 0xFF)
     }

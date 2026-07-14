@@ -33,13 +33,14 @@ around an Intel 8086 core. It is not a cycle-exact IBM 5150 replica.
   entries point into firmware, with a state-preserving default for unimplemented
   vectors. It owns IRQ0/1/6 and implements the complete installed 80x25 CGA
   text-mode INT 10h surface (AH=00h/01h/02h/03h/05h/06h/07h/08h/09h/0Ah/0Eh/0Fh),
-  INT 11h, INT 12h, INT 13h/AH=00h/02h, INT 14h, INT 16h/AH=00h/01h, INT 17h,
-  and INT 1Ah/AH=00h. Other functions return unsupported status or remain
+  INT 11h/12h, read-only floppy INT 13h AH=00h/01h/02h/03h/04h/05h/08h/15h/16h,
+  INT 15h/AH=88h, INT 16h/AH=00h/01h/02h/05h, INT 18h/19h, and INT 1Ah
+  AH=00h/01h. INT 14h/17h report absent devices. Other functions remain
   outside the current BIOS contract.
-- BIOS INT 13h reads currently support drive 0 and CHS values whose cylinder
-  fits in CH. Callers must not cross a track or a 64 KiB DMA boundary in one
-  request. INT 16h uses a single-key latch rather than the PC ring buffer, and
-  INT 1Ah does not implement midnight rollover.
+- BIOS INT 13h discovers mounted-media geometry through standard SEEK/READ ID,
+  crosses track/head boundaries one sector at a time, and rejects complete
+  requests that cross a 64 KiB DMA page before issuing I/O. The keyboard BIOS
+  uses the canonical BDA ring buffer and INT 1Ah implements midnight rollover.
 - Port E9h is a passive, test-only diagnostic recorder. It does not alter guest
   execution; snapshots retain a bounded sequence of POST progress/failure codes.
 - The BIOS boot path reads drive 0 CHS 0/0/1 to 0000:7C00, requires a 55AAh

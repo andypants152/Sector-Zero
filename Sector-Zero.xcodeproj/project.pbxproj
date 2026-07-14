@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A50B10010000000000000001 /* Project/Firmware/m48-bios.bin in Resources */ = {isa = PBXBuildFile; fileRef = A50B10010000000000000002 /* Project/Firmware/m48-bios.bin */; };
+		A50B10010000000000000001 /* Project/Firmware/sector-zero-bios-1.0.bin in Resources */ = {isa = PBXBuildFile; fileRef = A50B10010000000000000002 /* Project/Firmware/sector-zero-bios-1.0.bin */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,7 +26,7 @@
 		985A777F30045E00006B2622 /* SectorZeroProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroProjectStore.swift; sourceTree = "<group>"; };
 		985A778130045E10006B2622 /* SectorZeroWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectorZeroWorkspace.swift; sourceTree = "<group>"; };
 		985A77AD3004AA67006B2622 /* Sector-ZeroTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Sector-ZeroTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A50B10010000000000000002 /* Project/Firmware/m48-bios.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "Project/Firmware/m48-bios.bin"; sourceTree = SOURCE_ROOT; };
+		A50B10010000000000000002 /* Project/Firmware/sector-zero-bios-1.0.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "Project/Firmware/sector-zero-bios-1.0.bin"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -63,7 +63,7 @@
 		985A77433004587E006B2622 = {
 			isa = PBXGroup;
 			children = (
-				A50B10010000000000000002 /* Project/Firmware/m48-bios.bin */,
+				A50B10010000000000000002 /* Project/Firmware/sector-zero-bios-1.0.bin */,
 				985A774E3004587E006B2622 /* Sector-Zero */,
 				985A77AE3004AA67006B2622 /* Sector-ZeroTests */,
 				985A774D3004587E006B2622 /* Products */,
@@ -190,7 +190,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A50B10010000000000000001 /* Project/Firmware/m48-bios.bin in Resources */,
+				A50B10010000000000000001 /* Project/Firmware/sector-zero-bios-1.0.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

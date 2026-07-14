@@ -10,7 +10,7 @@ struct M53TextVideoBIOSTests {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Project/Firmware/m48-bios.bin")
+            .appendingPathComponent("Project/Firmware/sector-zero-bios-1.0.bin")
     }
 
     private func bootDisk() -> Data {

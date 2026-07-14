@@ -45,7 +45,7 @@ struct WorkspaceFirmwareTests {
         let workspace = SectorZeroWorkspace(userDefaults: userDefaults)
         #expect(workspace.createProject(named: "Configurable", in: root))
         #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 64 * 1_024)
-        #expect(workspace.currentProject?.metadata.firmwarePath == "firmware/m48-bios.bin")
+        #expect(workspace.currentProject?.metadata.firmwarePath == "firmware/sector-zero-bios-1.0.bin")
         #expect(workspace.machineSnapshot.cpu.fault == nil)
 
         let sourceURL = root.appendingPathComponent("bios.bin", isDirectory: false)
