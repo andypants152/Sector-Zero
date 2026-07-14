@@ -2,13 +2,16 @@ import SwiftUI
 
 struct CPUInspectorView: View {
     let state: MachineSnapshot
+    var showsHeader = true
 
     private var cpu: CPUStateSnapshot { state.cpu }
 
     var body: some View {
         VStack(spacing: 0) {
-            inspectorHeader
-            Divider().overlay(Color.sectorBorder)
+            if showsHeader {
+                inspectorHeader
+                Divider().overlay(Color.sectorBorder)
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -20,9 +23,8 @@ struct CPUInspectorView: View {
                 .padding(13)
             }
         }
-        .frame(width: 252)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .sectorCard()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .modifier(CPUInspectorContainerStyle(isEnabled: showsHeader))
         .accessibilityLabel("8086 inspector")
     }
 
@@ -50,6 +52,7 @@ struct CPUInspectorView: View {
                 .frame(height: 22)
                 .background(Color.sectorStatus(stateSeverity).opacity(0.08))
                 .clipShape(Capsule())
+                .help(stateTooltip)
         }
         .padding(.horizontal, 13)
         .frame(height: 46)
@@ -78,6 +81,8 @@ struct CPUInspectorView: View {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .stroke(Color.sectorBorder.opacity(0.72), lineWidth: 1)
                     }
+                    .help(registerTooltip(register.name))
+                    .accessibilityLabel("\(register.name), \(registerTooltip(register.name)): \(String(format: "%04X", register.value)) hexadecimal")
                 }
             }
         }
@@ -87,10 +92,10 @@ struct CPUInspectorView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectorSectionLabel(title: "EXECUTION")
             VStack(spacing: 7) {
-                valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip), emphasis: true)
-                valueRow(name: "PHYSICAL", value: String(format: "%05X", state.physicalCodeAddress))
-                valueRow(name: "OPCODE", value: cpu.lastFetchedOpcodeText)
-                valueRow(name: "CYCLES", value: String(state.cycleCount))
+                valueRow(name: "CS:IP", value: String(format: "%04X:%04X", cpu.cs, cpu.ip), emphasis: true, help: "Code Segment : Instruction Pointer. Together they locate the next instruction the 8086 will fetch.")
+                valueRow(name: "PHYSICAL", value: String(format: "%05X", state.physicalCodeAddress), help: "The 20-bit memory address produced from CS:IP: (CS × 16) + IP.")
+                valueRow(name: "OPCODE", value: cpu.lastFetchedOpcodeText, help: "The first byte of the most recently fetched instruction, shown in hexadecimal. -- means nothing has been fetched since reset.")
+                valueRow(name: "CYCLES", value: String(state.cycleCount), help: "Total emulated 8086 clock cycles elapsed since reset; this is machine time, not wall-clock time.")
             }
             .padding(10)
             .background(Color.sectorElevated)
@@ -102,8 +107,8 @@ struct CPUInspectorView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectorSectionLabel(title: "DEVICES")
             HStack(spacing: 6) {
-                deviceTile("KBD", value: keyboardText, systemImage: "keyboard")
-                deviceTile("FDC", value: floppyText, systemImage: "externaldrive")
+                deviceTile("KBD", value: keyboardText, systemImage: "keyboard", help: "Keyboard. The XT keyboard sends scan codes through the 8255 peripheral interface; Q is the number still queued.")
+                deviceTile("FDC", value: floppyText, systemImage: "externaldrive", help: "Floppy Disk Controller. It reads floppy sectors and coordinates DMA transfers into RAM.")
             }
         }
     }
@@ -132,14 +137,14 @@ struct CPUInspectorView: View {
                             RoundedRectangle(cornerRadius: 5, style: .continuous)
                                 .stroke(cpu.flags[flag] ? Color.sectorAccent.opacity(0.3) : Color.sectorBorder.opacity(0.6), lineWidth: 1)
                         }
-                        .help(flag.displayName)
+                        .help(flagTooltip(flag))
                         .accessibilityLabel("\(flag.displayName): \(cpu.flags[flag] ? "set" : "clear")")
                 }
             }
         }
     }
 
-    private func valueRow(name: String, value: String, emphasis: Bool = false) -> some View {
+    private func valueRow(name: String, value: String, emphasis: Bool = false, help: String) -> some View {
         HStack(spacing: 8) {
             Text(name)
                 .font(.sectorMono(9, weight: .bold))
@@ -150,9 +155,10 @@ struct CPUInspectorView: View {
                 .foregroundStyle(emphasis ? Color.sectorHeading : Color.sectorText)
                 .textSelection(.enabled)
         }
+        .help(help)
     }
 
-    private func deviceTile(_ title: String, value: String, systemImage: String) -> some View {
+    private func deviceTile(_ title: String, value: String, systemImage: String, help: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: systemImage)
@@ -169,6 +175,7 @@ struct CPUInspectorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.sectorElevated)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help(help)
     }
 
     private var allRegisters: [RegisterValue] {
@@ -209,12 +216,69 @@ struct CPUInspectorView: View {
         return .live
     }
 
+    private var stateTooltip: String {
+        if cpu.fault != nil { return "FAULT: execution stopped because the emulator detected an error." }
+        if cpu.halted { return "HALT: the CPU executed HLT and waits for a qualifying interrupt or reset." }
+        if cpu.waitingForCoprocessor { return "WAIT: the CPU is waiting for the absent 8087 coprocessor endpoint." }
+        return "LIVE: the CPU is able to execute instructions."
+    }
+
+    private func registerTooltip(_ name: String) -> String {
+        return switch name {
+        case "AX": "Accumulator register. Used by arithmetic and many instructions as an implicit operand."
+        case "BX": "Base register. Often holds a base address when forming memory addresses."
+        case "CX": "Count register. Used by loops, shifts, and REP string instructions."
+        case "DX": "Data register. Extends arithmetic results and selects many I/O ports."
+        case "SI": "Source Index. Points to source data for string and indexed-memory instructions."
+        case "DI": "Destination Index. Points to destination data for string and indexed-memory instructions."
+        case "SP": "Stack Pointer. Offset of the top of the current stack within SS."
+        case "BP": "Base Pointer. Commonly addresses stack-frame data; memory operands using BP default to SS."
+        case "CS": "Code Segment. Base segment for instruction fetches; combined with IP to locate code."
+        case "DS": "Data Segment. Default base segment for ordinary data-memory operands."
+        case "ES": "Extra Segment. An additional data segment, commonly the destination for string instructions."
+        case "SS": "Stack Segment. Base segment used by PUSH, POP, CALL, RET, and stack-addressed memory."
+        case "IP": "Instruction Pointer. Offset of the next instruction within CS."
+        default: "16-bit 8086 register."
+        }
+    }
+
+    private func flagTooltip(_ flag: CPUFlag) -> String {
+        let state = cpu.flags[flag] ? "Set" : "Clear"
+        let meaning: String
+        switch flag {
+        case .carry: meaning = "Carry Flag: unsigned carry or borrow from the most significant bit."
+        case .parity: meaning = "Parity Flag: set when the low result byte contains an even number of set bits."
+        case .auxiliaryCarry: meaning = "Auxiliary Carry Flag: carry or borrow between bits 3 and 4, used by decimal adjustments."
+        case .zero: meaning = "Zero Flag: set when an arithmetic or logical result is zero."
+        case .sign: meaning = "Sign Flag: copies the most significant bit of an arithmetic or logical result."
+        case .trap: meaning = "Trap Flag: requests a single-step interrupt after each instruction."
+        case .interruptEnable: meaning = "Interrupt Enable Flag: permits maskable hardware interrupts when set."
+        case .direction: meaning = "Direction Flag: controls whether string instructions increment or decrement index registers."
+        case .overflow: meaning = "Overflow Flag: set when a signed arithmetic result cannot fit in its destination."
+        }
+        return "\(state). \(meaning)"
+    }
+
     private var registerColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
     }
 
     private var flagColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
+    }
+}
+
+private struct CPUInspectorContainerStyle: ViewModifier {
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .frame(width: 252)
+                .sectorCard()
+        } else {
+            content
+        }
     }
 }
 

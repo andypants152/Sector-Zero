@@ -1,6 +1,8 @@
 import Foundation
 
 struct SectorZeroProject: Codable, Equatable, Identifiable, Sendable {
+    static let firmwareProvenanceKey = "firmwareProvenance"
+    static let builtInFirmwareProvenance = "sector-zero-bios-1.0"
     var projectName: String
     var projectURL: URL
     var creationDate: Date
@@ -33,6 +35,13 @@ struct SectorZeroProject: Codable, Equatable, Identifiable, Sendable {
 
     var configuredFirmwareURL: URL? {
         resolvedProjectFileURL(metadata.firmwarePath)
+    }
+
+    /// BIOS-specific UI explanations are enabled only for firmware installed
+    /// from Sector Zero's bundled image. Older projects intentionally fall
+    /// back to generic narration until that image is reinstalled.
+    var usesBuiltInFirmware: Bool {
+        metadata.userInfo[Self.firmwareProvenanceKey] == Self.builtInFirmwareProvenance
     }
 
     private func resolvedProjectFileURL(_ configuredPath: String?) -> URL? {

@@ -94,7 +94,8 @@ enum SectorZeroProjectStore {
     static func installFirmware(
         _ image: Data,
         named rawFileName: String,
-        into project: SectorZeroProject
+        into project: SectorZeroProject,
+        isBuiltInFirmware: Bool = false
     ) throws -> SectorZeroProject {
         let fileName = sanitizedFirmwareFileName(for: rawFileName)
         try FileManager.default.createDirectory(
@@ -106,6 +107,11 @@ enum SectorZeroProjectStore {
 
         var updated = project
         updated.metadata.firmwarePath = "firmware/\(fileName)"
+        if isBuiltInFirmware {
+            updated.metadata.userInfo[SectorZeroProject.firmwareProvenanceKey] = SectorZeroProject.builtInFirmwareProvenance
+        } else {
+            updated.metadata.userInfo.removeValue(forKey: SectorZeroProject.firmwareProvenanceKey)
+        }
         try save(updated)
         return updated
     }

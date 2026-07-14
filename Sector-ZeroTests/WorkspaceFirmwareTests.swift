@@ -46,6 +46,7 @@ struct WorkspaceFirmwareTests {
         #expect(workspace.createProject(named: "Configurable", in: root))
         #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 64 * 1_024)
         #expect(workspace.currentProject?.metadata.firmwarePath == "firmware/sector-zero-bios-1.0.bin")
+        #expect(workspace.currentProject?.usesBuiltInFirmware == true)
         #expect(workspace.machineSnapshot.cpu.fault == nil)
 
         let sourceURL = root.appendingPathComponent("bios.bin", isDirectory: false)
@@ -55,6 +56,7 @@ struct WorkspaceFirmwareTests {
         #expect(workspace.machineSnapshot.loadedSystemROMByteCount == 16)
         #expect(workspace.machine.bus.readByte(at: 0xFFFF0) == 0xF4)
         #expect(workspace.currentProject?.metadata.firmwarePath == "firmware/bios.bin")
+        #expect(workspace.currentProject?.usesBuiltInFirmware == false)
         #expect(workspace.machineSnapshot.cpu.fault == nil)
         #expect(workspace.machineSnapshot.cpu.ip == 0)
         #expect(workspace.machineCondition == MachineCondition(label: "READY", severity: .ready))

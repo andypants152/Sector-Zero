@@ -266,7 +266,7 @@ struct SectorZeroWorkspaceView: View {
     private var emulatorContent: some View {
         HStack(alignment: .top, spacing: 14) {
             displayPanel
-            CPUInspectorView(state: workspace.machineSnapshot)
+            MachineSidebarView(workspace: workspace)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

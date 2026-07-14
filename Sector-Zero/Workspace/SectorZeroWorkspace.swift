@@ -382,7 +382,7 @@ final class SectorZeroWorkspace {
     /// vector is what runs next. Validation happens before anything is
     /// persisted, so a rejected image leaves the package untouched.
     @discardableResult
-    func configureFirmware(from sourceURL: URL) -> Bool {
+    func configureFirmware(from sourceURL: URL, isBuiltInFirmware: Bool = false) -> Bool {
         guard !isRunning else { return false }
         guard let project = currentProject else {
             errorMessage = "Open a machine before choosing firmware."
@@ -395,7 +395,8 @@ final class SectorZeroWorkspace {
             currentProject = try SectorZeroProjectStore.installFirmware(
                 image,
                 named: sourceURL.lastPathComponent,
-                into: project
+                into: project,
+                isBuiltInFirmware: isBuiltInFirmware
             )
             lastRunStopReason = nil
             apply(machine.snapshot())
@@ -416,7 +417,7 @@ final class SectorZeroWorkspace {
             errorMessage = "The built-in Sector Zero BIOS is missing from this app build."
             return false
         }
-        return configureFirmware(from: sourceURL)
+        return configureFirmware(from: sourceURL, isBuiltInFirmware: true)
     }
 
     /// Validates and installs a disk-image copy into the open project, then
