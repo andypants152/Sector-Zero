@@ -109,6 +109,10 @@ final class Machine {
         bus.floppyController
     }
 
+    var blockDiskController: ISABlockDiskController {
+        bus.blockDiskController
+    }
+
     var diagnosticPort: DiagnosticPort {
         bus.diagnosticPort
     }
@@ -122,6 +126,7 @@ final class Machine {
         dmaController.reset()
         interruptController.reset()
         floppyController.reset()
+        blockDiskController.reset()
         diagnosticPort.reset()
         cpu.reset()
         clock.reset()
@@ -164,12 +169,20 @@ final class Machine {
         reset()
     }
 
-    func mountFloppyDisk(_ image: Data) throws {
-        try floppyController.mount(image)
+    func mountFloppyDisk(_ image: Data, drive: UInt8 = 0, fileURL: URL? = nil) throws {
+        try floppyController.mount(image, drive: drive, fileURL: fileURL)
     }
 
-    func ejectFloppyDisk() {
-        floppyController.eject()
+    func ejectFloppyDisk(drive: UInt8 = 0) {
+        floppyController.eject(drive: drive)
+    }
+
+    func mountHardDisk(_ image: Data, fileURL: URL? = nil) throws {
+        try blockDiskController.mount(image, fileURL: fileURL)
+    }
+
+    func ejectHardDisk() {
+        blockDiskController.eject()
     }
 
     func attachClockedDevice(_ device: any ClockedDevice) {
@@ -483,7 +496,7 @@ final class Machine {
         guard floppyController.dmaRequestActive else { return }
         let result = bus.serviceDMAChannel2(
             deviceRead: floppyController.takeDMAByte,
-            deviceWrite: { _ in }
+            deviceWrite: floppyController.putDMAByte
         )
         guard result.transferred else { return }
         advanceClock(by: result.clocks)
@@ -644,6 +657,7 @@ final class Machine {
             rejectedROMWriteCount: bus.rejectedROMWriteCount,
             dmaController: dmaController.snapshot,
             floppyController: floppyController.snapshot,
+            blockDiskController: blockDiskController.snapshot,
             diagnosticPort: diagnosticPort.snapshot,
             interruptController: interruptController.snapshot,
             intervalTimer: intervalTimer.snapshot,

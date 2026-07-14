@@ -78,7 +78,7 @@ struct M52BIOSFoundationTests {
     func biosDataArea() throws {
         let machine = try bootToHandoff()
 
-        #expect(machine.bus.readWord(at: 0x0410) == 0x0021)
+        #expect(machine.bus.readWord(at: 0x0410) == 0x0061)
         #expect(machine.bus.readWord(at: 0x0413) == 640)
         #expect(machine.bus.readByte(at: 0x0441) == 0)
         #expect(machine.bus.readByte(at: 0x0449) == 3)

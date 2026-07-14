@@ -88,7 +88,7 @@ stage2:
     DIAG_EVENT SUITE_CONFORMANCE, 0x02, DIAG_STATUS_PASSED
 
     int $0x11
-    cmpw $0x0021, %ax
+    cmpw $0x0061, %ax
     je 1f
     jmp fail_platform
 1:

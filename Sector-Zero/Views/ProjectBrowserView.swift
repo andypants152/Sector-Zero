@@ -13,6 +13,7 @@ struct ProjectBrowserView: View {
     @State private var isImportingProject = false
     @State private var isImportingFirmware = false
     @State private var isImportingDiskImage = false
+    @State private var diskSlotBeingImported: ProjectDiskSlot = .floppyA
     @State private var projectPendingDeletion: RecentProject?
 
     var body: some View {
@@ -158,6 +159,10 @@ struct ProjectBrowserView: View {
                 firmwareRow(for: project)
                 Divider().overlay(Color.sectorBorder)
                 diskImageRow(for: project)
+                Divider().overlay(Color.sectorBorder)
+                floppyBRow(for: project)
+                Divider().overlay(Color.sectorBorder)
+                hardDiskRow(for: project)
             }
             .sectorCard()
         }
@@ -326,13 +331,59 @@ struct ProjectBrowserView: View {
             }
 
             Button(project.configuredDiskImageURL == nil ? "Insert" : "Replace") {
-                chooseDiskImage()
+                chooseDiskImage(slot: .floppyA)
             }
             .controlSize(.small)
             .tint(Color.sectorHeading)
             .disabled(workspace.isRunning)
             .help("Install a supported raw floppy image")
             .accessibilityIdentifier("chooseDiskImageButton")
+        }
+    }
+
+    private func floppyBRow(for project: SectorZeroProject) -> some View {
+        setupRow(
+            title: "Floppy B",
+            value: project.configuredFloppyBURL?.lastPathComponent ?? "Empty",
+            systemImage: "externaldrive",
+            isMissing: project.configuredFloppyBURL == nil
+        ) {
+            if project.configuredFloppyBURL != nil {
+                Button { workspace.ejectFloppyDisk(drive: 1) } label: {
+                    Image(systemName: "eject")
+                }
+                .controlSize(.small)
+                .disabled(workspace.isRunning)
+            }
+            Button(project.configuredFloppyBURL == nil ? "Insert" : "Replace") {
+                chooseDiskImage(slot: .floppyB)
+            }
+            .controlSize(.small)
+            .disabled(workspace.isRunning)
+        }
+    }
+
+    private func hardDiskRow(for project: SectorZeroProject) -> some View {
+        setupRow(
+            title: "Hard Disk C",
+            value: project.configuredHardDiskURL?.lastPathComponent ?? "Empty",
+            systemImage: "internaldrive",
+            isMissing: project.configuredHardDiskURL == nil
+        ) {
+            if project.configuredHardDiskURL != nil {
+                Button { workspace.ejectHardDisk() } label: { Image(systemName: "eject") }
+                    .controlSize(.small)
+                    .disabled(workspace.isRunning)
+            } else {
+                Button("Create 20 MB") { workspace.createBlankHardDisk() }
+                    .controlSize(.small)
+                    .disabled(workspace.isRunning)
+            }
+            Button(project.configuredHardDiskURL == nil ? "Attach" : "Replace") {
+                chooseDiskImage(slot: .hardDisk)
+            }
+            .controlSize(.small)
+            .disabled(workspace.isRunning)
         }
     }
 
@@ -384,17 +435,22 @@ struct ProjectBrowserView: View {
         #endif
     }
 
-    private func chooseDiskImage() {
+    private func chooseDiskImage(slot: ProjectDiskSlot) {
+        diskSlotBeingImported = slot
         #if os(macOS)
         let panel = NSOpenPanel()
-        panel.title = "Choose Floppy Image"
-        panel.prompt = "Insert"
+        panel.title = slot == .hardDisk ? "Choose Hard Disk Image" : "Choose Floppy Image"
+        panel.prompt = slot == .hardDisk ? "Attach" : "Insert"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        workspace.configureDiskImage(from: url)
+        switch slot {
+        case .floppyA: workspace.configureFloppyDisk(from: url, drive: 0)
+        case .floppyB: workspace.configureFloppyDisk(from: url, drive: 1)
+        case .hardDisk: workspace.configureHardDisk(from: url)
+        }
         #else
         isImportingDiskImage = true
         #endif
@@ -417,7 +473,13 @@ struct ProjectBrowserView: View {
     }
 
     private func openImportedDiskImage(_ result: Result<[URL], Error>) {
-        importSecurityScopedURL(from: result) { workspace.configureDiskImage(from: $0) }
+        importSecurityScopedURL(from: result) { url in
+            switch diskSlotBeingImported {
+            case .floppyA: workspace.configureFloppyDisk(from: url, drive: 0)
+            case .floppyB: workspace.configureFloppyDisk(from: url, drive: 1)
+            case .hardDisk: workspace.configureHardDisk(from: url)
+            }
+        }
     }
 
     private func openImportedFirmware(_ result: Result<[URL], Error>) {

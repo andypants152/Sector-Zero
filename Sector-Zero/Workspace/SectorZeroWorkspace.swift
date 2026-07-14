@@ -423,7 +423,13 @@ final class SectorZeroWorkspace {
     /// mounts the same bytes in the floppy controller without resetting the CPU.
     @discardableResult
     func configureDiskImage(from sourceURL: URL) -> Bool {
+        configureFloppyDisk(from: sourceURL, drive: 0)
+    }
+
+    @discardableResult
+    func configureFloppyDisk(from sourceURL: URL, drive: UInt8) -> Bool {
         guard !isRunning else { return false }
+        guard drive < 2 else { return false }
         guard let project = currentProject else {
             errorMessage = "Open a machine before choosing a disk image."
             return false
@@ -434,9 +440,13 @@ final class SectorZeroWorkspace {
             let updatedProject = try SectorZeroProjectStore.installDiskImage(
                 image,
                 named: sourceURL.lastPathComponent,
-                into: project
+                into: project,
+                slot: drive == 0 ? .floppyA : .floppyB
             )
-            try machine.mountFloppyDisk(image)
+            let mountedURL = drive == 0
+                ? updatedProject.configuredDiskImageURL
+                : updatedProject.configuredFloppyBURL
+            try machine.mountFloppyDisk(image, drive: drive, fileURL: mountedURL)
             currentProject = updatedProject
             apply(machine.snapshot())
             errorMessage = nil
@@ -450,15 +460,81 @@ final class SectorZeroWorkspace {
     /// Clears the mounted-image selection without deleting the package copy.
     @discardableResult
     func ejectDiskImage() -> Bool {
+        ejectFloppyDisk(drive: 0)
+    }
+
+    @discardableResult
+    func ejectFloppyDisk(drive: UInt8) -> Bool {
         guard !isRunning else { return false }
+        guard drive < 2 else { return false }
         guard let project = currentProject else {
             errorMessage = "Open a machine before ejecting its disk image."
             return false
         }
         do {
-            let updatedProject = try SectorZeroProjectStore.ejectDiskImage(from: project)
-            machine.ejectFloppyDisk()
+            let updatedProject = try SectorZeroProjectStore.ejectDiskImage(
+                from: project,
+                slot: drive == 0 ? .floppyA : .floppyB
+            )
+            machine.ejectFloppyDisk(drive: drive)
             currentProject = updatedProject
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func configureHardDisk(from sourceURL: URL) -> Bool {
+        guard !isRunning else { return false }
+        guard let project = currentProject else {
+            errorMessage = "Open a machine before choosing a hard disk image."
+            return false
+        }
+        do {
+            let image = try Data(contentsOf: sourceURL)
+            _ = try FixedDiskGeometry.detect(byteCount: image.count)
+            let updatedProject = try SectorZeroProjectStore.installDiskImage(
+                image,
+                named: sourceURL.lastPathComponent,
+                into: project,
+                slot: .hardDisk
+            )
+            try machine.mountHardDisk(image, fileURL: updatedProject.configuredHardDiskURL)
+            currentProject = updatedProject
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func createBlankHardDisk() -> Bool {
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sector-zero-20mb-\(UUID().uuidString).img")
+        do {
+            try Data(count: FixedDiskGeometry.classic20MB.byteCount).write(to: temporaryURL)
+            defer { try? FileManager.default.removeItem(at: temporaryURL) }
+            return configureHardDisk(from: temporaryURL)
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func ejectHardDisk() -> Bool {
+        guard !isRunning else { return false }
+        guard let project = currentProject else { return false }
+        do {
+            currentProject = try SectorZeroProjectStore.ejectDiskImage(from: project, slot: .hardDisk)
+            machine.ejectHardDisk()
             apply(machine.snapshot())
             errorMessage = nil
             return true
@@ -556,9 +632,19 @@ final class SectorZeroWorkspace {
                 machine.clearSystemROM()
             }
             if let diskImageURL = project.configuredDiskImageURL {
-                try machine.mountFloppyDisk(Data(contentsOf: diskImageURL))
+                try machine.mountFloppyDisk(Data(contentsOf: diskImageURL), drive: 0, fileURL: diskImageURL)
             } else {
-                machine.ejectFloppyDisk()
+                machine.ejectFloppyDisk(drive: 0)
+            }
+            if let floppyBURL = project.configuredFloppyBURL {
+                try machine.mountFloppyDisk(Data(contentsOf: floppyBURL), drive: 1, fileURL: floppyBURL)
+            } else {
+                machine.ejectFloppyDisk(drive: 1)
+            }
+            if let hardDiskURL = project.configuredHardDiskURL {
+                try machine.mountHardDisk(Data(contentsOf: hardDiskURL), fileURL: hardDiskURL)
+            } else {
+                machine.ejectHardDisk()
             }
             apply(machine.snapshot())
         } catch {

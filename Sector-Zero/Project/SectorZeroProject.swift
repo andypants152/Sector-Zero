@@ -23,6 +23,14 @@ struct SectorZeroProject: Codable, Equatable, Identifiable, Sendable {
         resolvedProjectFileURL(metadata.diskImagePath)
     }
 
+    var configuredFloppyBURL: URL? {
+        resolvedProjectFileURL(metadata.floppyBPath)
+    }
+
+    var configuredHardDiskURL: URL? {
+        resolvedProjectFileURL(metadata.hardDiskPath)
+    }
+
     var configuredFirmwareURL: URL? {
         resolvedProjectFileURL(metadata.firmwarePath)
     }
@@ -42,19 +50,25 @@ struct ProjectMetadata: Codable, Equatable, Sendable {
     var userInfo: [String: String]
     var firmwarePath: String?
     var diskImagePath: String?
+    var floppyBPath: String?
+    var hardDiskPath: String?
 
     init(
         formatVersion: Int = 1,
         buildSettings: [String: String] = [:],
         userInfo: [String: String] = [:],
         firmwarePath: String? = nil,
-        diskImagePath: String? = nil
+        diskImagePath: String? = nil,
+        floppyBPath: String? = nil,
+        hardDiskPath: String? = nil
     ) {
         self.formatVersion = formatVersion
         self.buildSettings = buildSettings
         self.userInfo = userInfo
         self.firmwarePath = firmwarePath
         self.diskImagePath = diskImagePath
+        self.floppyBPath = floppyBPath
+        self.hardDiskPath = hardDiskPath
     }
 }
 

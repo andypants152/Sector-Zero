@@ -60,10 +60,20 @@ struct FloppyDiskControllerSnapshot: Equatable, Sendable {
     let dmaRequestActive: Bool
     let mediaGeometry: FloppyDiskGeometry?
     let mediaByteCount: Int
+    let drives: [FloppyDriveSnapshot]
+    let writeCount: Int
+    let persistenceError: String?
     let recentReads: [FloppyReadTrace]
+    let recentWrites: [FloppyWriteTrace]
+}
+
+struct FloppyDriveSnapshot: Equatable, Sendable {
+    let geometry: FloppyDiskGeometry?
+    let mediaByteCount: Int
 }
 
 struct FloppyReadTrace: Equatable, Sendable {
+    var drive: UInt8 = 0
     let cylinder: UInt8
     let head: UInt8
     let sector: UInt8
@@ -72,10 +82,18 @@ struct FloppyReadTrace: Equatable, Sendable {
     let byteCount: Int
 }
 
+struct FloppyWriteTrace: Equatable, Sendable {
+    let drive: UInt8
+    let cylinder: UInt8
+    let head: UInt8
+    let sector: UInt8
+    let byteCount: Int
+}
+
 /// Intel 8272/NEC 765 subset behind the original PC floppy ports. The first
 /// milestone implements command/result framing, reset, seek/recalibrate,
-/// sense and READ ID commands, and DMA-backed READ DATA for drive 0. Disk writes and the
-/// broader diagnostic/format command set remain deliberately unsupported.
+/// sense and READ ID commands, and DMA-backed READ/WRITE DATA for drives 0 and
+/// 1. The broader diagnostic/format command set remains deliberately small.
 final class FloppyDiskController: IOPortDevice {
     static let digitalOutputPort: UInt16 = 0x3F2
     static let mainStatusPort: UInt16 = 0x3F4
@@ -84,14 +102,32 @@ final class FloppyDiskController: IOPortDevice {
     static let portRange: ClosedRange<UInt16> = 0x3F2...0x3F7
 
     private struct Media {
-        let bytes: [UInt8]
+        var bytes: [UInt8]
         let geometry: FloppyDiskGeometry
+        let fileURL: URL?
+        var persistenceError: String?
 
         func sector(cylinder: Int, head: Int, sector: Int) -> ArraySlice<UInt8> {
             let logicalSector = (cylinder * geometry.heads + head) * geometry.sectorsPerTrack
                 + (sector - 1)
             let start = logicalSector * geometry.bytesPerSector
             return bytes[start..<(start + geometry.bytesPerSector)]
+        }
+
+        mutating func writeSector(_ source: ArraySlice<UInt8>, cylinder: Int, head: Int, sector: Int) {
+            let logicalSector = (cylinder * geometry.heads + head) * geometry.sectorsPerTrack
+                + (sector - 1)
+            let start = logicalSector * geometry.bytesPerSector
+            bytes.replaceSubrange(start..<(start + source.count), with: source)
+            guard let fileURL else { return }
+            do {
+                let handle = try FileHandle(forUpdating: fileURL)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: UInt64(start))
+                try handle.write(contentsOf: Data(source))
+            } catch {
+                persistenceError = error.localizedDescription
+            }
         }
     }
 
@@ -116,18 +152,33 @@ final class FloppyDiskController: IOPortDevice {
         }
     }
 
+    private struct WriteExecution {
+        let drive: UInt8
+        let sectors: [SectorID]
+        let bytesPerSector: Int
+        var bytes: [UInt8] = []
+
+        var currentSector: SectorID {
+            let sectorIndex = min(max(bytes.count - 1, 0) / bytesPerSector, sectors.count - 1)
+            return sectors[sectorIndex]
+        }
+    }
+
     private let interruptController: ProgrammableInterruptController
     private let dmaController: DirectMemoryAccessController
-    private var media: Media?
+    private var media = Array<Media?>(repeating: nil, count: 4)
     private var digitalOutput: UInt8 = 0
     private var commandBytes: [UInt8] = []
     private var expectedCommandByteCount = 0
     private var resultBytes: [UInt8] = []
     private var readExecution: ReadExecution?
+    private var writeExecution: WriteExecution?
     private var pendingInterrupts: [(status: UInt8, cylinder: UInt8)] = []
     private var cylinders = Array(repeating: UInt8(0), count: 4)
     private var specifyBytes: (UInt8, UInt8) = (0, 0)
     private var recentReads: [FloppyReadTrace] = []
+    private var recentWrites: [FloppyWriteTrace] = []
+    private var writeCount = 0
     private static let maximumRecordedReads = 128
 
     init(
@@ -139,7 +190,7 @@ final class FloppyDiskController: IOPortDevice {
     }
 
     var phase: FloppyControllerPhase {
-        if readExecution != nil { return .execution }
+        if readExecution != nil || writeExecution != nil { return .execution }
         if !resultBytes.isEmpty { return .result }
         if !commandBytes.isEmpty { return .command }
         return .idle
@@ -160,7 +211,7 @@ final class FloppyDiskController: IOPortDevice {
     var dmaAndInterruptEnabled: Bool { digitalOutput & 0x08 != 0 }
 
     var dmaRequestActive: Bool {
-        readExecution != nil && controllerEnabled && dmaAndInterruptEnabled
+        (readExecution != nil || writeExecution != nil) && controllerEnabled && dmaAndInterruptEnabled
     }
 
     var snapshot: FloppyDiskControllerSnapshot {
@@ -174,21 +225,30 @@ final class FloppyDiskController: IOPortDevice {
             resultByteCount: resultBytes.count,
             pendingInterruptCount: pendingInterrupts.count,
             dmaRequestActive: dmaRequestActive,
-            mediaGeometry: media?.geometry,
-            mediaByteCount: media?.bytes.count ?? 0,
-            recentReads: recentReads
+            mediaGeometry: media[0]?.geometry,
+            mediaByteCount: media[0]?.bytes.count ?? 0,
+            drives: media.map { FloppyDriveSnapshot(
+                geometry: $0?.geometry,
+                mediaByteCount: $0?.bytes.count ?? 0
+            ) },
+            writeCount: writeCount,
+            persistenceError: media.compactMap { $0?.persistenceError }.first,
+            recentReads: recentReads,
+            recentWrites: recentWrites
         )
     }
 
-    func mount(_ image: Data) throws {
+    func mount(_ image: Data, drive: UInt8 = 0, fileURL: URL? = nil) throws {
+        guard drive < 4 else { throw FloppyDiskImageError.unsupportedSize(image.count) }
         let geometry = try FloppyDiskGeometry.detect(byteCount: image.count)
-        media = Media(bytes: Array(image), geometry: geometry)
+        media[Int(drive)] = Media(bytes: Array(image), geometry: geometry, fileURL: fileURL)
     }
 
-    func eject() {
-        media = nil
-        if readExecution != nil {
-            finishReadFailure(status0: 0x48 | selectedDrive, status1: 0x04)
+    func eject(drive: UInt8 = 0) {
+        guard drive < 4 else { return }
+        media[Int(drive)] = nil
+        if readExecution?.drive == drive || writeExecution?.drive == drive {
+            finishTransferFailure(status0: 0x48 | drive, status1: 0x04)
         }
     }
 
@@ -200,6 +260,8 @@ final class FloppyDiskController: IOPortDevice {
         cylinders = Array(repeating: 0, count: 4)
         specifyBytes = (0, 0)
         recentReads.removeAll(keepingCapacity: true)
+        recentWrites.removeAll(keepingCapacity: true)
+        writeCount = 0
     }
 
     func readByte(from port: UInt16) -> UInt8 {
@@ -211,7 +273,7 @@ final class FloppyDiskController: IOPortDevice {
         case Self.dataPort:
             return readDataRegister()
         case Self.digitalInputPort:
-            return media == nil ? 0x80 : 0x00
+            return media[Int(selectedDrive)] == nil ? 0x80 : 0x00
         default:
             return 0xFF
         }
@@ -239,10 +301,23 @@ final class FloppyDiskController: IOPortDevice {
         return byte
     }
 
+    func putDMAByte(_ byte: UInt8) {
+        guard var execution = writeExecution,
+              execution.bytes.count < execution.sectors.count * execution.bytesPerSector else {
+            return
+        }
+        execution.bytes.append(byte)
+        writeExecution = execution
+    }
+
     func completeDMAService(_ result: DMAServiceResult) {
-        guard result.transferred, let execution = readExecution else { return }
-        if result.reachedTerminalCount || execution.byteIndex >= execution.bytes.count {
-            finishReadSuccess(execution.currentSector)
+        guard result.transferred else { return }
+        if let execution = readExecution,
+           result.reachedTerminalCount || execution.byteIndex >= execution.bytes.count {
+            finishTransferSuccess(execution.currentSector, drive: execution.drive)
+        } else if let execution = writeExecution,
+                  result.reachedTerminalCount || execution.bytes.count >= execution.sectors.count * execution.bytesPerSector {
+            finishWriteSuccess(execution)
         }
     }
 
@@ -295,6 +370,7 @@ final class FloppyDiskController: IOPortDevice {
         switch command & 0x1F {
         case 0x03: return 3  // SPECIFY
         case 0x04: return 2  // SENSE DRIVE STATUS
+        case 0x05: return 9  // WRITE DATA
         case 0x06: return 9  // READ DATA
         case 0x07: return 2  // RECALIBRATE
         case 0x08: return 1  // SENSE INTERRUPT STATUS
@@ -310,6 +386,8 @@ final class FloppyDiskController: IOPortDevice {
             specifyBytes = (command[1], command[2])
         case 0x04:
             senseDriveStatus(command)
+        case 0x05:
+            beginWriteData(command)
         case 0x06:
             beginReadData(command)
         case 0x07:
@@ -331,8 +409,8 @@ final class FloppyDiskController: IOPortDevice {
         let head = driveAndHead >> 2 & 0x01
         var status3 = drive | head << 2
         if cylinders[Int(drive)] == 0 { status3 |= 0x10 }
-        if drive == 0, media != nil { status3 |= 0x20 }
-        if media?.geometry.heads == 2 { status3 |= 0x08 }
+        if media[Int(drive)] != nil { status3 |= 0x20 }
+        if media[Int(drive)]?.geometry.heads == 2 { status3 |= 0x08 }
         enterResult([status3], raisesInterrupt: false)
     }
 
@@ -368,16 +446,16 @@ final class FloppyDiskController: IOPortDevice {
         let drive = driveAndHead & 0x03
         let head = driveAndHead >> 2 & 0x01
         let cylinder = cylinders[Int(drive)]
-        guard drive == 0, let media else {
+        guard let mountedMedia = media[Int(drive)] else {
             enterResult([0x48 | head << 2 | drive, 0x04, 0, cylinder, head, 1, 2], raisesInterrupt: true)
             return
         }
-        guard Int(cylinder) < media.geometry.tracks,
-              Int(head) < media.geometry.heads else {
+        guard Int(cylinder) < mountedMedia.geometry.tracks,
+              Int(head) < mountedMedia.geometry.heads else {
             enterResult([
                 0x40 | head << 2 | drive,
                 0x04,
-                Int(cylinder) >= media.geometry.tracks ? 0x10 : 0,
+                Int(cylinder) >= mountedMedia.geometry.tracks ? 0x10 : 0,
                 cylinder,
                 head,
                 1,
@@ -393,7 +471,7 @@ final class FloppyDiskController: IOPortDevice {
             0,
             cylinder,
             head,
-            UInt8(media.geometry.sectorsPerTrack),
+            UInt8(mountedMedia.geometry.sectorsPerTrack),
             2,
         ], raisesInterrupt: true)
     }
@@ -408,8 +486,8 @@ final class FloppyDiskController: IOPortDevice {
         let sizeCode = command[5]
         let endOfTrack = command[6]
 
-        guard drive == 0, let media else {
-            finishReadFailure(
+        guard let mountedMedia = media[Int(drive)] else {
+            finishTransferFailure(
                 status0: 0x48 | selectedHead << 2 | drive,
                 status1: 0x04,
                 cylinder: cylinder,
@@ -420,17 +498,17 @@ final class FloppyDiskController: IOPortDevice {
             return
         }
         guard sizeCode == 2,
-              Int(cylinder) < media.geometry.tracks,
+              Int(cylinder) < mountedMedia.geometry.tracks,
               head == selectedHead,
-              Int(head) < media.geometry.heads,
+              Int(head) < mountedMedia.geometry.heads,
               sector > 0,
               sector <= endOfTrack,
-              Int(endOfTrack) <= media.geometry.sectorsPerTrack else {
-            let endOfCylinder = Int(endOfTrack) > media.geometry.sectorsPerTrack ? UInt8(0x80) : 0
-            finishReadFailure(
+              Int(endOfTrack) <= mountedMedia.geometry.sectorsPerTrack else {
+            let endOfCylinder = Int(endOfTrack) > mountedMedia.geometry.sectorsPerTrack ? UInt8(0x80) : 0
+            finishTransferFailure(
                 status0: 0x40 | selectedHead << 2 | drive,
                 status1: 0x04 | endOfCylinder,
-                status2: Int(cylinder) >= media.geometry.tracks ? 0x10 : 0,
+                status2: Int(cylinder) >= mountedMedia.geometry.tracks ? 0x10 : 0,
                 cylinder: cylinder,
                 head: head,
                 sector: sector,
@@ -448,7 +526,7 @@ final class FloppyDiskController: IOPortDevice {
                 sizeCode: sizeCode
             ))
         }
-        if command[0] & 0x80 != 0, head == 0, media.geometry.heads > 1 {
+        if command[0] & 0x80 != 0, head == 0, mountedMedia.geometry.heads > 1 {
             for currentSector in UInt8(1)...endOfTrack {
                 sectorIDs.append(SectorID(
                     cylinder: cylinder,
@@ -460,9 +538,9 @@ final class FloppyDiskController: IOPortDevice {
         }
 
         var transferBytes: [UInt8] = []
-        transferBytes.reserveCapacity(sectorIDs.count * media.geometry.bytesPerSector)
+        transferBytes.reserveCapacity(sectorIDs.count * mountedMedia.geometry.bytesPerSector)
         for id in sectorIDs {
-            transferBytes.append(contentsOf: media.sector(
+            transferBytes.append(contentsOf: mountedMedia.sector(
                 cylinder: Int(id.cylinder),
                 head: Int(id.head),
                 sector: Int(id.sector)
@@ -473,6 +551,7 @@ final class FloppyDiskController: IOPortDevice {
             recentReads.removeFirst()
         }
         recentReads.append(FloppyReadTrace(
+            drive: drive,
             cylinder: cylinder,
             head: head,
             sector: sector,
@@ -484,14 +563,70 @@ final class FloppyDiskController: IOPortDevice {
             drive: drive,
             bytes: transferBytes,
             sectors: sectorIDs,
-            bytesPerSector: media.geometry.bytesPerSector
+            bytesPerSector: mountedMedia.geometry.bytesPerSector
         )
         syncDMARequest()
     }
 
-    private func finishReadSuccess(_ sector: SectorID) {
-        let drive = readExecution?.drive ?? selectedDrive
+    private func beginWriteData(_ command: [UInt8]) {
+        let driveAndHead = command[1]
+        let drive = driveAndHead & 0x03
+        let selectedHead = driveAndHead >> 2 & 0x01
+        let cylinder = command[2]
+        let head = command[3]
+        let sector = command[4]
+        let sizeCode = command[5]
+        let endOfTrack = command[6]
+
+        guard let mountedMedia = media[Int(drive)] else {
+            finishTransferFailure(
+                status0: 0x48 | selectedHead << 2 | drive,
+                status1: 0x04,
+                cylinder: cylinder,
+                head: head,
+                sector: sector,
+                sizeCode: sizeCode
+            )
+            return
+        }
+        guard sizeCode == 2,
+              Int(cylinder) < mountedMedia.geometry.tracks,
+              head == selectedHead,
+              Int(head) < mountedMedia.geometry.heads,
+              sector > 0,
+              sector <= endOfTrack,
+              Int(endOfTrack) <= mountedMedia.geometry.sectorsPerTrack else {
+            finishTransferFailure(
+                status0: 0x40 | selectedHead << 2 | drive,
+                status1: 0x04 | (Int(endOfTrack) > mountedMedia.geometry.sectorsPerTrack ? 0x80 : 0),
+                status2: Int(cylinder) >= mountedMedia.geometry.tracks ? 0x10 : 0,
+                cylinder: cylinder,
+                head: head,
+                sector: sector,
+                sizeCode: sizeCode
+            )
+            return
+        }
+
+        var sectors = (sector...endOfTrack).map {
+            SectorID(cylinder: cylinder, head: head, sector: $0, sizeCode: sizeCode)
+        }
+        if command[0] & 0x80 != 0, head == 0, mountedMedia.geometry.heads > 1 {
+            sectors += (UInt8(1)...endOfTrack).map {
+                SectorID(cylinder: cylinder, head: 1, sector: $0, sizeCode: sizeCode)
+            }
+        }
+        writeExecution = WriteExecution(
+            drive: drive,
+            sectors: sectors,
+            bytesPerSector: mountedMedia.geometry.bytesPerSector
+        )
+        syncDMARequest()
+    }
+
+    private func finishTransferSuccess(_ sector: SectorID, drive: UInt8) {
         readExecution = nil
+        writeExecution = nil
         syncDMARequest()
         enterResult([
             sector.head << 2 | drive,
@@ -504,7 +639,47 @@ final class FloppyDiskController: IOPortDevice {
         ], raisesInterrupt: true)
     }
 
-    private func finishReadFailure(
+    private func finishWriteSuccess(_ execution: WriteExecution) {
+        guard var mountedMedia = media[Int(execution.drive)] else {
+            finishTransferFailure(status0: 0x48 | execution.drive, status1: 0x04)
+            return
+        }
+        for (index, id) in execution.sectors.enumerated() {
+            let start = index * execution.bytesPerSector
+            let end = start + execution.bytesPerSector
+            guard end <= execution.bytes.count else {
+                finishTransferFailure(
+                    status0: 0x40 | id.head << 2 | execution.drive,
+                    status1: 0x10,
+                    cylinder: id.cylinder,
+                    head: id.head,
+                    sector: id.sector,
+                    sizeCode: id.sizeCode
+                )
+                return
+            }
+            mountedMedia.writeSector(
+                execution.bytes[start..<end],
+                cylinder: Int(id.cylinder),
+                head: Int(id.head),
+                sector: Int(id.sector)
+            )
+        }
+        media[Int(execution.drive)] = mountedMedia
+        writeCount += execution.sectors.count
+        if recentWrites.count == Self.maximumRecordedReads { recentWrites.removeFirst() }
+        let first = execution.sectors[0]
+        recentWrites.append(FloppyWriteTrace(
+            drive: execution.drive,
+            cylinder: first.cylinder,
+            head: first.head,
+            sector: first.sector,
+            byteCount: execution.bytes.count
+        ))
+        finishTransferSuccess(execution.currentSector, drive: execution.drive)
+    }
+
+    private func finishTransferFailure(
         status0: UInt8,
         status1: UInt8,
         status2: UInt8 = 0,
@@ -514,6 +689,7 @@ final class FloppyDiskController: IOPortDevice {
         sizeCode: UInt8 = 2
     ) {
         readExecution = nil
+        writeExecution = nil
         syncDMARequest()
         enterResult([
             status0, status1, status2, cylinder, head, sector, sizeCode,
@@ -539,6 +715,7 @@ final class FloppyDiskController: IOPortDevice {
         expectedCommandByteCount = 0
         resultBytes.removeAll(keepingCapacity: true)
         readExecution = nil
+        writeExecution = nil
         pendingInterrupts.removeAll(keepingCapacity: true)
         interruptController.lower(.floppy)
         syncDMARequest()

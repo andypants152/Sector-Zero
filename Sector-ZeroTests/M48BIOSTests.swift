@@ -163,7 +163,7 @@ struct M48BIOSTests {
         let machine = try bootMachine()
 
         _ = callBIOS(0x11, on: machine)
-        #expect(machine.cpu.ax == 0x0021) // One floppy drive and 80x25 color video.
+        #expect(machine.cpu.ax == 0x0061) // Two floppy drives and 80x25 color video.
 
         _ = callBIOS(0x12, on: machine)
         #expect(machine.cpu.ax == 640)

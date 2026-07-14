@@ -62,23 +62,25 @@ struct M57FloppyBIOSTests {
             #expect(machine.cpu.registers[.ch] == UInt8(geometry.tracks - 1))
             #expect(machine.cpu.registers[.cl] & 0x3F == UInt8(geometry.sectorsPerTrack))
             #expect(machine.cpu.registers[.dh] == UInt8(geometry.heads - 1))
-            #expect(machine.cpu.registers[.dl] == 1)
+            #expect(machine.cpu.registers[.dl] == 2)
         }
     }
 
-    @Test("Status persists failures and read-only operations report write protection")
-    func statusAndWriteProtection() throws {
+    @Test("Writes succeed and status reports the completed operation")
+    func statusAndWrite() throws {
         let geometry = FloppyDiskGeometry.supported[3]
         let machine = try boot(disk(geometry))
+        for index in 0..<512 { machine.bus.writeByte(0x5C, at: 0x2000 + UInt32(index)) }
 
         _ = call(machine, ax: 0x0301, bx: 0x2000, cx: 0x0001)
-        #expect(machine.cpu.flags[.carry])
-        #expect(machine.cpu.registers[.ah] == 0x03)
-        #expect(machine.bus.readByte(at: 0x0441) == 0x03)
+        #expect(!machine.cpu.flags[.carry])
+        #expect(machine.cpu.registers[.al] == 1)
+        #expect(machine.bus.readByte(at: 0x0441) == 0)
+        #expect(machine.snapshot().floppyController.writeCount == 1)
 
         _ = call(machine, ax: 0x0100)
-        #expect(machine.cpu.flags[.carry])
-        #expect(machine.cpu.registers[.ah] == 0x03)
+        #expect(!machine.cpu.flags[.carry])
+        #expect(machine.cpu.registers[.ah] == 0)
 
         _ = call(machine, ax: 0x0000)
         #expect(!machine.cpu.flags[.carry])
@@ -134,5 +136,20 @@ struct M57FloppyBIOSTests {
         #expect(machine.cpu.flags[.carry])
         #expect(machine.cpu.registers[.ah] == 0x09)
         #expect(machine.snapshot().floppyController.recentReads.count == before)
+    }
+
+    @Test("INT 13h addresses a separately mounted writable B drive")
+    func driveB() throws {
+        let geometry = FloppyDiskGeometry.supported[3]
+        let machine = try boot()
+        try machine.mountFloppyDisk(disk(geometry, seed: 0x30), drive: 1)
+
+        _ = call(machine, ax: 0x0201, bx: 0x2400, cx: 0x0001, dx: 0x0001)
+        #expect(!machine.cpu.flags[.carry])
+        #expect(machine.bus.readByte(at: 0x2400) == 0x30)
+        for index in 0..<512 { machine.bus.writeByte(0x6D, at: 0x2600 + UInt32(index)) }
+        _ = call(machine, ax: 0x0301, bx: 0x2600, cx: 0x0001, dx: 0x0001)
+        #expect(!machine.cpu.flags[.carry])
+        #expect(machine.snapshot().floppyController.recentWrites.last?.drive == 1)
     }
 }

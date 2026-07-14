@@ -1,5 +1,11 @@
 import Foundation
 
+enum ProjectDiskSlot: Equatable, Sendable {
+    case floppyA
+    case floppyB
+    case hardDisk
+}
+
 enum SectorZeroProjectStoreError: LocalizedError {
     case emptyProjectName
     case projectAlreadyExists(URL)
@@ -111,9 +117,11 @@ enum SectorZeroProjectStore {
     static func installDiskImage(
         _ image: Data,
         named rawFileName: String,
-        into project: SectorZeroProject
+        into project: SectorZeroProject,
+        slot: ProjectDiskSlot = .floppyA
     ) throws -> SectorZeroProject {
-        let fileName = sanitizedFileName(for: rawFileName, fallback: "floppy.img")
+        let fallback = slot == .hardDisk ? "hard-disk.img" : "floppy.img"
+        let fileName = sanitizedFileName(for: rawFileName, fallback: fallback)
         try FileManager.default.createDirectory(
             at: project.diskImageURL,
             withIntermediateDirectories: true
@@ -122,16 +130,27 @@ enum SectorZeroProjectStore {
         try image.write(to: destinationURL, options: [.atomic])
 
         var updated = project
-        updated.metadata.diskImagePath = "disk/\(fileName)"
+        switch slot {
+        case .floppyA: updated.metadata.diskImagePath = "disk/\(fileName)"
+        case .floppyB: updated.metadata.floppyBPath = "disk/\(fileName)"
+        case .hardDisk: updated.metadata.hardDiskPath = "disk/\(fileName)"
+        }
         try save(updated)
         return updated
     }
 
     /// Ejects the configured image without deleting it from the project. This
     /// keeps eject reversible and avoids surprising data loss.
-    static func ejectDiskImage(from project: SectorZeroProject) throws -> SectorZeroProject {
+    static func ejectDiskImage(
+        from project: SectorZeroProject,
+        slot: ProjectDiskSlot = .floppyA
+    ) throws -> SectorZeroProject {
         var updated = project
-        updated.metadata.diskImagePath = nil
+        switch slot {
+        case .floppyA: updated.metadata.diskImagePath = nil
+        case .floppyB: updated.metadata.floppyBPath = nil
+        case .hardDisk: updated.metadata.hardDiskPath = nil
+        }
         try save(updated)
         return updated
     }

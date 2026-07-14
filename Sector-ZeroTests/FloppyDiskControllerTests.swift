@@ -50,7 +50,8 @@ struct FloppyDiskControllerTests {
         _ machine: Machine,
         address: UInt16,
         count: UInt16,
-        page: UInt8 = 0
+        page: UInt8 = 0,
+        mode: UInt8 = 0x46
     ) {
         machine.bus.writeIOByte(0, at: 0x0C)
         machine.bus.writeIOByte(UInt8(truncatingIfNeeded: address), at: 0x04)
@@ -58,8 +59,32 @@ struct FloppyDiskControllerTests {
         machine.bus.writeIOByte(UInt8(truncatingIfNeeded: count), at: 0x05)
         machine.bus.writeIOByte(UInt8(count >> 8), at: 0x05)
         machine.bus.writeIOByte(page, at: 0x81)
-        machine.bus.writeIOByte(0x46, at: 0x0B) // Ch2, device-to-memory, single.
+        machine.bus.writeIOByte(mode, at: 0x0B)
         machine.bus.writeIOByte(0x02, at: 0x0A) // Unmask channel 2.
+    }
+
+    @Test("Drive B accepts DMA writes and returns the changed sector")
+    func driveBWriteAndRead() throws {
+        let machine = Machine()
+        try machine.bus.loadBytes([0xF4], at: 0xFFFF0)
+        try machine.mountFloppyDisk(image(), drive: 1)
+        machine.bus.writeIOByte(0x0D, at: 0x3F2)
+        drainResetSenseStatuses(machine)
+        for index in 0..<sectorSize { machine.bus.writeByte(0xA7, at: 0x2800 + UInt32(index)) }
+
+        programDMA(machine, address: 0x2800, count: 511, mode: 0x4A)
+        writeCommand([0x05, 0x01, 0, 0, 1, 2, 1, 0x1B, 0xFF], to: machine)
+        for _ in 0..<512 { machine.step() }
+        #expect(readResult(7, from: machine) == [1, 0, 0, 0, 0, 1, 2])
+
+        programDMA(machine, address: 0x2A00, count: 511)
+        writeCommand([0x06, 0x01, 0, 0, 1, 2, 1, 0x1B, 0xFF], to: machine)
+        for _ in 0..<512 { machine.step() }
+        #expect((0..<sectorSize).allSatisfy {
+            machine.bus.readByte(at: 0x2A00 + UInt32($0)) == 0xA7
+        })
+        #expect(machine.snapshot().floppyController.writeCount == 1)
+        #expect(machine.snapshot().floppyController.recentWrites.first?.drive == 1)
     }
 
     private func readDataCommand(

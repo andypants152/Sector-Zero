@@ -29,7 +29,7 @@ From the architectural reset vector, the ROM initializes the IVT/BDA, CGA text
 mode, master PIC, PIT channel 0, XT keyboard path, and floppy controller. POST
 reports progress and device-specific failure codes to passive test port E9h and
 prints its result through guest video. The release surface includes text-mode
-INT 10h; INT 11h/12h; read-only floppy INT 13h
+INT 10h; INT 11h/12h; writable floppy and fixed-disk INT 13h
 AH=00h/01h/02h/03h/04h/05h/08h/15h/16h; INT 15h/AH=88h; XT keyboard INT 16h
 AH=00h/01h/02h/05h; INT 18h/19h; and INT 1Ah AH=00h/01h. INT 14h/17h
 truthfully report absent serial and printer hardware.
@@ -39,7 +39,7 @@ reads drive 0 CHS 0/0/1 to physical 07C00h through INT 13h, requires the 55AAh
 signature, and reports read/signature failures as E1h/E2h on port E9h and guest
 text video. A successful handoff uses `CS:IP = 0000:7C00`, zeroes AX/BX/CX/DX,
 SI/DI/BP and DS/ES/SS, sets SP to 7C00h, leaves interrupts disabled, and identifies
-the only supported boot drive with DL=00h.
+the selected boot drive with DL=00h for floppy or DL=80h for fixed disk.
 
 M50 retains the same standard INT 13h path for DOS file reads. Its ES:BX DMA
 setup preserves all four page bits, including destinations in high conventional
@@ -61,6 +61,22 @@ and teletype control characters with wrapping and scrolling. BDA, CRTC, and VRAM
 state remain synchronized. Long dispatch branches use explicit 8086-safe short
 conditions plus near jumps; the ROM never relies on the later `0F 8x` encoding.
 
+## Writable storage
+
+The 765 path supports independent A: and B: media, DMA-backed READ DATA and
+WRITE DATA, write-through project images, and two-drive equipment/parameter
+reporting. The bootstrap tries A: first and then C: while preserving the boot
+drive in DL.
+
+C: is provided by a clean-room ISA block adapter inspired by PicoMEM's public
+disk-BIOS architecture: firmware supplies CHS and a conventional-memory window,
+and the adapter performs a synchronous sector transfer. No PicoMEM GPL source or
+private protocol is incorporated. The adapter occupies ports 02A0h–02A9h and
+supports reset (00h), read (20h), write (30h), and identify (ECh). IDENTIFY
+publishes maximum cylinder, maximum head, and sectors per track through the CHS
+registers. Sector Zero accepts exact raw CHS images and can create the classic
+615/4/17 geometry (21,411,840 bytes).
+
 ## Diagnostic firmware ladder
 
 - `reset-smoke.s` / `.bin` is a 512-byte reset, segment, stack, RAM, ROM-write,
@@ -79,7 +95,7 @@ initialization or service routines.
 
 System BIOS 1.0 owns equipment/memory at `0040:0010/0013`; keyboard flags,
 head/tail, the 16-word ring, and bounds at `0040:0017–003D/0080–0082`; floppy
-last status at `0040:0041`; text mode, columns, page size/offset, per-page
+last status at `0040:0041`; fixed-disk status/count at `0040:0074–0075`; text mode, columns, page size/offset, per-page
 cursors, cursor shape, active page, CRTC base, and mode/color bytes at
 `0040:0049–0066`; ticks and midnight rollover at `0040:006C–0070`; and the
 warm-boot marker at `0040:0072`. Addresses above `0040:0082` are private BIOS

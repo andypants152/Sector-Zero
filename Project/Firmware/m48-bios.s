@@ -3,9 +3,9 @@
 
     .code16
     .section __TEXT,__text
-    // Reserve the upper 8 KiB of the 64 KiB system ROM for executable BIOS
+    // Reserve the upper 16 KiB of the 64 KiB system ROM for executable BIOS
     // code and tables while keeping the architectural reset vector at FFF0h.
-    .org 0xe000
+    .org 0xc000
 
 // Tests may assemble a non-shipping variant that takes one POST failure path.
 // The checked-in artifact and ordinary build always use zero (no injection).
@@ -37,6 +37,8 @@
     .set BDA_TICKS_HIGH,   0x046e
     .set BDA_MIDNIGHT,     0x0470
     .set BDA_WARM_BOOT,    0x0472
+    .set BDA_FIXED_STATUS, 0x0474
+    .set BDA_FIXED_COUNT,  0x0475
     .set BDA_KB_START,     0x0480
     .set BDA_KB_END,       0x0482
     .set BDA_KEY_WORD,     0x0490
@@ -64,6 +66,10 @@
     .set REQ_DMA_PAGE,     0x04a8
     .set REQ_REMAINING,    0x04a9
     .set REQ_ORIGINAL,     0x04aa
+    .set REQ_COMMAND,      0x04ab
+    .set REQ_DMA_MODE,     0x04ac
+    .set FIXED_CYLINDER,   0x04ad
+    .set BOOT_FAILURE_KIND,0x04af
     .set POST_WARM_FLAG,   0x0504
 
 bios_entry:
@@ -234,9 +240,22 @@ pic_test_passed:
 
     // Publish the standard PC platform and mode-3 text fields. Later BIOS
     // services update these values instead of maintaining private shadows.
-    movw $0x0021, BDA_EQUIPMENT
+    movw $0x0061, BDA_EQUIPMENT
     movw $640, BDA_MEMORY_KB
     movb $0, BDA_DISK_STATUS
+    movb $0, BDA_FIXED_STATUS
+    movb $0, BDA_FIXED_COUNT
+    movw $0x02a1, %dx
+    xorb %al, %al
+    outb %al, %dx
+    decw %dx
+    movb $0xec, %al
+    outb %al, %dx
+    inb %dx, %al
+    cmpb $0x40, %al
+    jne 1f
+    movb $1, BDA_FIXED_COUNT
+1:
     movb $0, BDA_KB_FLAGS1
     movb $0, BDA_KB_FLAGS2
     movw $0x001e, BDA_KB_HEAD
@@ -288,6 +307,7 @@ bootstrap:
     // documented Sector Zero boot contract before a far transfer.
     movb $0xb0, %al
     outb %al, $0xe9
+    movb $0, BOOT_FAILURE_KIND
     sti
     xorw %ax, %ax
     movw %ax, %es
@@ -296,11 +316,11 @@ bootstrap:
     movw $0x0001, %cx
     xorw %dx, %dx
     int $0x13
-    jc boot_read_failure
+    jc boot_try_fixed
     movb $0xb1, %al
     outb %al, $0xe9
     cmpw $0xaa55, 0x7dfe
-    jne boot_signature_failure
+    jne boot_floppy_bad_signature
     movb $0xb2, %al
     outb %al, $0xe9
 
@@ -313,6 +333,43 @@ bootstrap:
     movw %ax, %bx
     movw %ax, %cx
     movw %ax, %dx
+    movb REQ_DRIVE, %dl
+    movw %ax, %si
+    movw %ax, %di
+    movw %ax, %bp
+    ljmp $0x0000, $0x7c00
+
+boot_floppy_bad_signature:
+    movb $1, BOOT_FAILURE_KIND
+boot_try_fixed:
+    xorw %ax, %ax
+    movw %ax, %es
+    movw $0x0201, %ax
+    movw $0x7c00, %bx
+    movw $0x0001, %cx
+    movw $0x0080, %dx
+    int $0x13
+    jc boot_fixed_read_failure
+    cmpw $0xaa55, 0x7dfe
+    jne boot_signature_failure
+    movb $0xb2, %al
+    outb %al, $0xe9
+    jmp 1f
+boot_fixed_read_failure:
+    cmpb $0, BOOT_FAILURE_KIND
+    jne boot_signature_failure
+    jmp boot_read_failure
+1:
+    cli
+    xorw %ax, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %ss
+    movw $0x7c00, %sp
+    movw %ax, %bx
+    movw %ax, %cx
+    movw %ax, %dx
+    movb $0x80, %dl
     movw %ax, %si
     movw %ax, %di
     movw %ax, %bp
@@ -401,6 +458,10 @@ fdc_detect_geometry:
     pushw %bx
     pushw %cx
     pushw %dx
+    movw $0x03f2, %dx
+    movb REQ_DRIVE, %al
+    orb $0x0c, %al
+    outb %al, %dx
     movw $0x03f7, %dx
     inb %dx, %al
     testb $0x80, %al
@@ -458,6 +519,7 @@ fdc_probe_id:
     movb REQ_HEAD, %al
     shlb $1, %al
     shlb $1, %al
+    orb REQ_DRIVE, %al
     outb %al, %dx
     movb REQ_CYLINDER, %al
     outb %al, %dx
@@ -480,6 +542,7 @@ fdc_probe_id:
     movb REQ_HEAD, %al
     shlb $1, %al
     shlb $1, %al
+    orb REQ_DRIVE, %al
     outb %al, %dx
     sti
 1:
@@ -779,7 +842,7 @@ default_interrupt_handler:
 // The equipment word advertises diskette hardware, one installed drive, and
 // 80x25 color video. Conventional RAM occupies the complete 640 KiB PC range.
 int11_handler:
-    movw $0x0021, %ax
+    movw $0x0061, %ax
     iretw
 
 int12_handler:
@@ -1652,10 +1715,14 @@ int1a_done:
     popw %bp
     iretw
 
-// INT 13h: read-only floppy services with live media geometry qualification.
+// INT 13h: writable A:/B: floppy services plus the ISA block adapter at C:.
 int13_handler:
     pushw %bp
     movw %sp, %bp
+    testb $0x80, %dl
+    jz 1f
+    jmp int13_fixed_dispatch
+1:
     cmpb $0, %ah
     jne 1f
     jmp int13_reset
@@ -1669,13 +1736,21 @@ int13_handler:
     jmp int13_read
 1:
     cmpb $3, %ah
-    je int13_write_protected
+    jne 1f
+    jmp int13_write
+1:
     cmpb $4, %ah
-    je int13_verify
+    jne 1f
+    jmp int13_verify
+1:
     cmpb $5, %ah
-    je int13_write_protected
+    jne 1f
+    jmp int13_service_bad_request
+1:
     cmpb $8, %ah
-    je int13_parameters
+    jne 1f
+    jmp int13_parameters
+1:
     cmpb $0x15, %ah
     jne 1f
     jmp int13_disk_type
@@ -1690,6 +1765,352 @@ int13_handler:
     orb $1, 6(%bp)
     popw %bp
     iretw
+
+int13_fixed_dispatch:
+    cmpb $0x80, %dl
+    je 1f
+    jmp int13_fixed_bad_request
+1:
+    cmpb $0, %ah
+    jne 1f
+    jmp int13_fixed_reset
+1:
+    cmpb $1, %ah
+    jne 1f
+    jmp int13_fixed_status
+1:
+    cmpb $2, %ah
+    jne 1f
+    jmp int13_fixed_read
+1:
+    cmpb $3, %ah
+    jne 1f
+    jmp int13_fixed_write
+1:
+    cmpb $4, %ah
+    jne 1f
+    jmp int13_fixed_verify
+1:
+    cmpb $8, %ah
+    jne 1f
+    jmp int13_fixed_parameters
+1:
+    cmpb $0x15, %ah
+    jne 1f
+    jmp int13_fixed_type
+1:
+    jmp int13_fixed_bad_request
+
+int13_fixed_status:
+    movb BDA_FIXED_STATUS, %ah
+    testb %ah, %ah
+    jz int13_fixed_success
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+
+int13_fixed_reset:
+    movw $0x02a0, %dx
+    xorb %al, %al
+    outb %al, %dx
+    inb %dx, %al
+    cmpb $0x40, %al
+    je int13_fixed_success
+    jmp int13_fixed_controller_error
+int13_fixed_success:
+    xorw %ax, %ax
+    movb %ah, BDA_FIXED_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_fixed_parameters:
+    call fixed_identify
+    jnc 1f
+    jmp int13_fixed_controller_error
+1:
+    xorw %cx, %cx
+    movw $0x02a2, %dx
+    inb %dx, %al
+    movb %al, %ch
+    incw %dx
+    inb %dx, %al
+    movb $6, %cl
+    shlb %cl, %al
+    movb %al, %cl
+    addw $2, %dx
+    inb %dx, %al
+    andb $0x3f, %al
+    orb %al, %cl
+    decw %dx
+    inb %dx, %al
+    movb %al, %dh
+    movb BDA_FIXED_COUNT, %dl
+    xorw %bx, %bx
+    xorw %ax, %ax
+    movb %ah, BDA_FIXED_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_fixed_type:
+    call fixed_identify
+    jnc 1f
+    jmp int13_fixed_controller_error
+1:
+    movw $0x02a2, %dx
+    inb %dx, %al
+    movb %al, %bl
+    incw %dx
+    inb %dx, %al
+    movb %al, %bh
+    incw %bx
+    incw %dx
+    inb %dx, %al
+    incb %al
+    xorb %ah, %ah
+    mulw %bx
+    movw %ax, %bx
+    incw %dx
+    inb %dx, %al
+    xorb %ah, %ah
+    mulw %bx
+    movw %ax, %dx
+    xorw %cx, %cx
+    movb $3, %ah
+    movb $0, BDA_FIXED_STATUS
+    andb $0xfe, 6(%bp)
+    popw %bp
+    iretw
+
+int13_fixed_verify:
+    call fixed_validate_request
+    jnc 1f
+    jmp int13_fixed_bad_request
+1:
+    jmp int13_fixed_success
+
+int13_fixed_read:
+    movb $0x20, %ah
+    jmp int13_fixed_transfer
+int13_fixed_write:
+    movb $0x30, %ah
+int13_fixed_transfer:
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %si
+    pushw %di
+    pushw %ds
+    xorw %si, %si
+    movw %si, %ds
+    movb %al, REQ_ORIGINAL
+    movb %ah, REQ_COMMAND
+    movb REQ_ORIGINAL, %al
+    call fixed_validate_request
+    jnc 1f
+    jmp int13_fixed_transfer_bad
+1:
+
+    movb %cl, %al
+    andb $0x3f, %al
+    movb %al, REQ_SECTOR
+    movb %ch, %al
+    xorb %ah, %ah
+    movw %ax, FIXED_CYLINDER
+    movb %cl, %al
+    andb $0xc0, %al
+    movb $6, %cl
+    shrb %cl, %al
+    movb %al, FIXED_CYLINDER+1
+    movb %dh, REQ_HEAD
+    movb %dl, REQ_DRIVE
+    movb REQ_ORIGINAL, %al
+    movb %al, REQ_COUNT
+
+    xorw %ax, %ax
+    movb REQ_COUNT, %al
+    movw $512, %cx
+    mulw %cx
+    movw %ax, %di
+    movw %es, %dx
+    movb $12, %cl
+    shrw %cl, %dx
+    movw %es, %ax
+    movb $4, %cl
+    shlw %cl, %ax
+    addw %bx, %ax
+    adcb $0, %dl
+    movw %ax, %si
+    movw %di, %ax
+    decw %ax
+    addw %si, %ax
+    jnc 1f
+    jmp int13_fixed_transfer_boundary
+1:
+
+    movw $0x02a1, %dx
+    xorb %al, %al
+    outb %al, %dx
+    incw %dx
+    movb FIXED_CYLINDER, %al
+    outb %al, %dx
+    incw %dx
+    movb FIXED_CYLINDER+1, %al
+    outb %al, %dx
+    incw %dx
+    movb REQ_HEAD, %al
+    outb %al, %dx
+    incw %dx
+    movb REQ_SECTOR, %al
+    outb %al, %dx
+    incw %dx
+    movb REQ_COUNT, %al
+    outb %al, %dx
+    incw %dx
+    movw %si, %ax
+    outb %al, %dx
+    incw %dx
+    movb %ah, %al
+    outb %al, %dx
+    incw %dx
+    movb %dl, %al
+    // Recover the physical page computed above from the saved request state.
+    movw %es, %ax
+    movb $12, %cl
+    shrw %cl, %ax
+    movw %es, %di
+    movb $4, %cl
+    shlw %cl, %di
+    addw %bx, %di
+    adcb $0, %al
+    outb %al, %dx
+    movw $0x02a0, %dx
+    movb REQ_COMMAND, %al
+    outb %al, %dx
+    inb %dx, %al
+    cmpb $0x40, %al
+    jne int13_fixed_transfer_error
+    xorw %ax, %ax
+    movb REQ_ORIGINAL, %al
+    movb $0, BDA_FIXED_STATUS
+    andb $0xfe, 6(%bp)
+    jmp int13_fixed_transfer_done
+
+int13_fixed_transfer_boundary:
+    movb $0x09, %al
+    jmp int13_fixed_transfer_error_status
+int13_fixed_transfer_bad:
+    movb $0x01, %al
+    jmp int13_fixed_transfer_error_status
+int13_fixed_transfer_error:
+    testb %al, %al
+    jnz int13_fixed_transfer_error_status
+    movb $0x01, %al
+int13_fixed_transfer_error_status:
+    movb %al, %ah
+    xorb %al, %al
+    movb %ah, BDA_FIXED_STATUS
+    orb $1, 6(%bp)
+int13_fixed_transfer_done:
+    popw %ds
+    popw %di
+    popw %si
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %bp
+    iretw
+
+int13_fixed_controller_error:
+    testb %al, %al
+    jnz 1f
+    movb $0x80, %al
+1:
+    movb %al, %ah
+    xorb %al, %al
+    movb %ah, BDA_FIXED_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+int13_fixed_bad_request:
+    movb $1, %ah
+    xorb %al, %al
+    movb %ah, BDA_FIXED_STATUS
+    orb $1, 6(%bp)
+    popw %bp
+    iretw
+
+// Issue the adapter's clean-room IDENTIFY command and return its status in AL.
+fixed_identify:
+    movw $0x02a1, %dx
+    xorb %al, %al
+    outb %al, %dx
+    decw %dx
+    movb $0xec, %al
+    outb %al, %dx
+    inb %dx, %al
+    cmpb $0x40, %al
+    jne 1f
+    clc
+    ret
+1:
+    stc
+    ret
+
+// Validate fixed-disk count and CHS against IDENTIFY without touching memory.
+fixed_validate_request:
+    testb %al, %al
+    jz 9f
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    movb %dh, %bl
+    movb %ch, %bh
+    movb %cl, %ah
+    andb $0x3f, %ah
+    movb %cl, %al
+    andb $0xc0, %al
+    movb $6, %cl
+    shrb %cl, %al
+    movb %al, %ch
+    call fixed_identify
+    jc 7f
+    testb %ah, %ah
+    jz 7f
+    movw $0x02a5, %dx
+    inb %dx, %al
+    cmpb %al, %ah
+    ja 7f
+    decw %dx
+    inb %dx, %al
+    cmpb %al, %bl
+    ja 7f
+    movw $0x02a3, %dx
+    inb %dx, %al
+    cmpb %al, %ch
+    ja 7f
+    jb 8f
+    decw %dx
+    inb %dx, %al
+    cmpb %al, %bh
+    ja 7f
+8:
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    clc
+    ret
+7:
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+9:
+    stc
+    ret
 
 int13_status:
     movb BDA_DISK_STATUS, %ah
@@ -1711,14 +2132,6 @@ int13_reset:
     popw %bp
     iretw
 
-int13_write_protected:
-    movb $0x03, %ah
-    xorb %al, %al
-    movb %ah, BDA_DISK_STATUS
-    orb $1, 6(%bp)
-    popw %bp
-    iretw
-
 int13_verify:
     call int13_validate_request
     jnc 1f
@@ -1731,10 +2144,15 @@ int13_verify:
     iretw
 
 int13_parameters:
-    cmpb $0, %dl
-    jne int13_service_bad_request
+    cmpb $1, %dl
+    jbe 1f
+    jmp int13_service_bad_request
+1:
+    movb %dl, REQ_DRIVE
     call fdc_detect_geometry
-    jc int13_service_not_ready
+    jnc 1f
+    jmp int13_service_not_ready
+1:
     xorw %ax, %ax
     xorw %bx, %bx
     xorw %cx, %cx
@@ -1744,19 +2162,28 @@ int13_parameters:
     xorw %dx, %dx
     movb DISK_GEOM_HEADS, %dh
     decb %dh
-    movb $1, %dl
+    movb $2, %dl
     movb $0, BDA_DISK_STATUS
     andb $0xfe, 6(%bp)
     popw %bp
     iretw
 
 int13_disk_type:
-    cmpb $0, %dl
-    jne int13_service_bad_request
+    cmpb $1, %dl
+    jbe 1f
+    jmp int13_service_bad_request
+1:
+    movb %dl, REQ_DRIVE
+    movw $0x03f2, %dx
+    movb REQ_DRIVE, %al
+    orb $0x0c, %al
+    outb %al, %dx
     movw $0x03f7, %dx
     inb %dx, %al
     testb $0x80, %al
-    jnz int13_service_not_ready
+    jz 1f
+    jmp int13_service_not_ready
+1:
     movb $1, %ah
     movb $0, BDA_DISK_STATUS
     andb $0xfe, 6(%bp)
@@ -1764,12 +2191,21 @@ int13_disk_type:
     iretw
 
 int13_media_status:
-    cmpb $0, %dl
-    jne int13_service_bad_request
+    cmpb $1, %dl
+    jbe 1f
+    jmp int13_service_bad_request
+1:
+    movb %dl, REQ_DRIVE
+    movw $0x03f2, %dx
+    movb REQ_DRIVE, %al
+    orb $0x0c, %al
+    outb %al, %dx
     movw $0x03f7, %dx
     inb %dx, %al
     testb $0x80, %al
-    jnz int13_service_media_changed
+    jz 1f
+    jmp int13_service_media_changed
+1:
     xorw %ax, %ax
     movb %ah, BDA_DISK_STATUS
     andb $0xfe, 6(%bp)
@@ -1800,10 +2236,11 @@ int13_service_bad_request:
 // Validate drive, count, CHS, and media against geometry discovered with
 // standard FDC commands. Register inputs are preserved.
 int13_validate_request:
-    cmpb $0, %dl
-    jne 9f
+    cmpb $1, %dl
+    ja 9f
     testb %al, %al
     jz 9f
+    movb %dl, REQ_DRIVE
     call fdc_detect_geometry
     jc 9f
     cmpb DISK_GEOM_TRACKS, %ch
@@ -1822,6 +2259,9 @@ int13_validate_request:
     ret
 
 int13_read:
+    jmp int13_transfer
+int13_write:
+int13_transfer:
     pushw %bx
     pushw %cx
     pushw %dx
@@ -1830,6 +2270,17 @@ int13_read:
     pushw %ds
     xorw %si, %si
     movw %si, %ds
+    movb %al, REQ_ORIGINAL
+    cmpb $2, %ah
+    jne 1f
+    movb $0x06, REQ_COMMAND
+    movb $0x46, REQ_DMA_MODE
+    jmp 2f
+1:
+    movb $0x05, REQ_COMMAND
+    movb $0x4a, REQ_DMA_MODE
+2:
+    movb REQ_ORIGINAL, %al
     call int13_validate_request
     jnc int13_request_valid
     jmp int13_bad_request
@@ -1886,17 +2337,18 @@ int13_sector_loop:
     outb %al, $0x05
     movb REQ_DMA_PAGE, %al
     outb %al, $0x81
-    movb $0x46, %al
+    movb REQ_DMA_MODE, %al
     outb %al, $0x0b
     movb $0x02, %al
     outb %al, $0x0a
 
     movb $0, FDC_DONE
     movw $0x03f2, %dx
-    movb $0x0c, %al
+    movb REQ_DRIVE, %al
+    orb $0x0c, %al
     outb %al, %dx
     movw $0x03f5, %dx
-    movb $0x06, %al
+    movb REQ_COMMAND, %al
     outb %al, %dx
     movb REQ_HEAD, %al
     shlb $1, %al
