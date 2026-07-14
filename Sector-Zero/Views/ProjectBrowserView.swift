@@ -10,6 +10,7 @@ struct ProjectBrowserView: View {
     var isCompact = false
 
     @State private var isShowingNewProject = false
+    @State private var isShowingMachineEditor = false
     @State private var isImportingProject = false
     @State private var isImportingFirmware = false
     @State private var isImportingDiskImage = false
@@ -39,6 +40,9 @@ struct ProjectBrowserView: View {
         .background(Color.sectorSidebar)
         .sheet(isPresented: $isShowingNewProject) {
             NewProjectSheet(workspace: workspace)
+        }
+        .sheet(isPresented: $isShowingMachineEditor) {
+            MachineEditorView(workspace: workspace)
         }
         .fileImporter(
             isPresented: $isImportingProject,
@@ -148,6 +152,13 @@ struct ProjectBrowserView: View {
             }
             .padding(12)
             .sectorCard(fill: .sectorSelection)
+
+            Button("Edit Machine…", systemImage: "slider.horizontal.3") {
+                isShowingMachineEditor = true
+            }
+            .buttonStyle(.borderless)
+            .disabled(workspace.isRunning)
+            .accessibilityIdentifier("editMachineButton")
         }
     }
 

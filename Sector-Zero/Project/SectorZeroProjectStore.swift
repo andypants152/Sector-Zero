@@ -126,14 +126,8 @@ enum SectorZeroProjectStore {
         into project: SectorZeroProject,
         slot: ProjectDiskSlot = .floppyA
     ) throws -> SectorZeroProject {
-        let fallback = slot == .hardDisk ? "hard-disk.img" : "floppy.img"
-        let fileName = sanitizedFileName(for: rawFileName, fallback: fallback)
-        try FileManager.default.createDirectory(
-            at: project.diskImageURL,
-            withIntermediateDirectories: true
-        )
-        let destinationURL = project.diskImageURL.appendingPathComponent(fileName, isDirectory: false)
-        try image.write(to: destinationURL, options: [.atomic])
+        let destinationURL = try storeDiskImage(image, named: rawFileName, into: project, slot: slot)
+        let fileName = destinationURL.lastPathComponent
 
         var updated = project
         switch slot {
@@ -143,6 +137,22 @@ enum SectorZeroProjectStore {
         }
         try save(updated)
         return updated
+    }
+
+    /// Copies media into the package without mounting it in a drive.
+    @discardableResult
+    static func storeDiskImage(
+        _ image: Data,
+        named rawFileName: String,
+        into project: SectorZeroProject,
+        slot: ProjectDiskSlot = .floppyA
+    ) throws -> URL {
+        let fallback = slot == .hardDisk ? "hard-disk.img" : "floppy.img"
+        let fileName = sanitizedFileName(for: rawFileName, fallback: fallback)
+        try FileManager.default.createDirectory(at: project.diskImageURL, withIntermediateDirectories: true)
+        let destinationURL = project.diskImageURL.appendingPathComponent(fileName, isDirectory: false)
+        try image.write(to: destinationURL, options: [.atomic])
+        return destinationURL
     }
 
     /// Ejects the configured image without deleting it from the project. This
@@ -157,6 +167,43 @@ enum SectorZeroProjectStore {
         case .floppyB: updated.metadata.floppyBPath = nil
         case .hardDisk: updated.metadata.hardDiskPath = nil
         }
+        try save(updated)
+        return updated
+    }
+
+    /// Returns the images kept in this machine's private media store. Images
+    /// are deliberately stored inside the package, rather than referenced at
+    /// their original host locations, so a machine remains portable.
+    static func storedDiskImages(in project: SectorZeroProject) throws -> [URL] {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: project.diskImageURL, withIntermediateDirectories: true)
+        return try fileManager.contentsOfDirectory(
+            at: project.diskImageURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        .filter { url in
+            var isDirectory: ObjCBool = false
+            return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        }
+        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    /// Removes an unmounted copy from the machine's private media store.
+    static func removeStoredDiskImage(at imageURL: URL, from project: SectorZeroProject) throws {
+        let storeURL = project.diskImageURL.standardizedFileURL.path
+        let candidateURL = imageURL.standardizedFileURL
+        guard candidateURL.deletingLastPathComponent().path == storeURL else {
+            throw SectorZeroProjectStoreError.invalidProjectPackage(project.projectURL)
+        }
+        try FileManager.default.removeItem(at: candidateURL)
+    }
+
+    static func renameProject(_ project: SectorZeroProject, to rawName: String) throws -> SectorZeroProject {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw SectorZeroProjectStoreError.emptyProjectName }
+        var updated = project
+        updated.projectName = name
         try save(updated)
         return updated
     }

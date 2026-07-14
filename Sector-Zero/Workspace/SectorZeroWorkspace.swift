@@ -458,6 +458,24 @@ final class SectorZeroWorkspace {
         }
     }
 
+    /// Adds a floppy to the package media store without changing either drive.
+    @discardableResult
+    func importFloppyToStore(from sourceURL: URL) -> Bool {
+        guard !isRunning, let project = currentProject else { return false }
+        do {
+            let image = try Data(contentsOf: sourceURL)
+            _ = try FloppyDiskGeometry.detect(byteCount: image.count)
+            _ = try SectorZeroProjectStore.storeDiskImage(
+                image, named: sourceURL.lastPathComponent, into: project
+            )
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     /// Clears the mounted-image selection without deleting the package copy.
     @discardableResult
     func ejectDiskImage() -> Bool {
@@ -536,6 +554,58 @@ final class SectorZeroWorkspace {
         do {
             currentProject = try SectorZeroProjectStore.ejectDiskImage(from: project, slot: .hardDisk)
             machine.ejectHardDisk()
+            apply(machine.snapshot())
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func renameCurrentProject(to name: String) -> Bool {
+        guard !isRunning, let project = currentProject else { return false }
+        do {
+            currentProject = try SectorZeroProjectStore.renameProject(project, to: name)
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func storedDiskImages() -> [URL] {
+        guard let project = currentProject else { return [] }
+        do {
+            return try SectorZeroProjectStore.storedDiskImages(in: project)
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
+    @discardableResult
+    func removeStoredDiskImage(at imageURL: URL) -> Bool {
+        guard !isRunning, let project = currentProject else { return false }
+        do {
+            let standardURL = imageURL.standardizedFileURL
+            var updatedProject = project
+            if project.configuredDiskImageURL?.standardizedFileURL == standardURL {
+                updatedProject = try SectorZeroProjectStore.ejectDiskImage(from: updatedProject, slot: .floppyA)
+                machine.ejectFloppyDisk(drive: 0)
+            }
+            if project.configuredFloppyBURL?.standardizedFileURL == standardURL {
+                updatedProject = try SectorZeroProjectStore.ejectDiskImage(from: updatedProject, slot: .floppyB)
+                machine.ejectFloppyDisk(drive: 1)
+            }
+            if project.configuredHardDiskURL?.standardizedFileURL == standardURL {
+                updatedProject = try SectorZeroProjectStore.ejectDiskImage(from: updatedProject, slot: .hardDisk)
+                machine.ejectHardDisk()
+            }
+            // Persist all possible ejections above before removing the file.
+            try SectorZeroProjectStore.removeStoredDiskImage(at: imageURL, from: updatedProject)
+            currentProject = updatedProject
             apply(machine.snapshot())
             errorMessage = nil
             return true

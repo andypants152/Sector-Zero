@@ -32,4 +32,20 @@ struct ProjectStorageControllerTests {
         #expect(withoutB.configuredFloppyBURL == nil)
         #expect(withoutB.configuredHardDiskURL != nil)
     }
+
+    @Test("Stored floppy media does not change a drive selection")
+    func storeOnlyMediaIsUnconfigured() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SectorZeroMediaStore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let project = try SectorZeroProjectStore.createProject(named: "Media", in: root)
+        let stored = try SectorZeroProjectStore.storeDiskImage(
+            Data(repeating: 0, count: 1_474_560), named: "dos.img", into: project
+        )
+
+        #expect(project.configuredDiskImageURL == nil)
+        #expect(try SectorZeroProjectStore.storedDiskImages(in: project).map(\.lastPathComponent) == [stored.lastPathComponent])
+    }
 }
