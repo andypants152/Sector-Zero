@@ -38,6 +38,15 @@
     .set REQ_HEAD,         0x0497
     .set REQ_DRIVE,        0x0498
     .set REQ_EOT,          0x0499
+    .set VIDEO_TOP,        0x049a
+    .set VIDEO_LEFT,       0x049b
+    .set VIDEO_BOTTOM,     0x049c
+    .set VIDEO_RIGHT,      0x049d
+    .set VIDEO_LINES,      0x049e
+    .set VIDEO_ATTRIBUTE,  0x049f
+    .set VIDEO_PAGE,       0x04a0
+    .set VIDEO_CHARACTER,  0x04a1
+    .set VIDEO_DIRECTION,  0x04a2
 
 bios_entry:
     cli
@@ -207,6 +216,24 @@ pic_test_passed:
     movb $0, BDA_MIDNIGHT
     movw $0, BDA_WARM_BOOT
 
+    // Keep the hardware cursor shape, start address, and position synchronized
+    // with the mode-3 state just published in the BDA.
+    movw $0x03d4, %dx
+    movb $0x0a, %al
+    outb %al, %dx
+    incw %dx
+    movb $6, %al
+    outb %al, %dx
+    decw %dx
+    movb $0x0b, %al
+    outb %al, %dx
+    incw %dx
+    movb $7, %al
+    outb %al, %dx
+    xorw %ax, %ax
+    call video_program_start
+    call video_program_cursor
+
     movb $0x50, %al
     outb %al, $0xe9
 
@@ -292,6 +319,8 @@ failure_halt:
 
 print_string:
     pushw %ax
+    pushw %bx
+    xorw %bx, %bx
 print_string_next:
     movb %cs:(%si), %al
     incw %si
@@ -301,6 +330,7 @@ print_string_next:
     int $0x10
     jmp print_string_next
 print_string_done:
+    popw %bx
     popw %ax
     ret
 
@@ -420,40 +450,711 @@ int17_handler:
     movb $0x01, %ah
     iretw
 
-// INT 10h: AH=0Eh teletype output. Other functions return unchanged.
+// INT 10h: complete text-mode services for the installed 80x25 CGA adapter.
 int10_handler:
+    cmpb $0x00, %ah
+    jne int10_dispatch_01
+    jmp int10_set_mode
+int10_dispatch_01:
+    cmpb $0x01, %ah
+    jne int10_dispatch_02
+    jmp int10_set_cursor_shape
+int10_dispatch_02:
+    cmpb $0x02, %ah
+    jne int10_dispatch_03
+    jmp int10_set_cursor_position
+int10_dispatch_03:
+    cmpb $0x03, %ah
+    jne int10_dispatch_05
+    jmp int10_get_cursor_position
+int10_dispatch_05:
+    cmpb $0x05, %ah
+    jne int10_dispatch_06
+    jmp int10_select_page
+int10_dispatch_06:
+    cmpb $0x06, %ah
+    jne int10_dispatch_07
+    jmp int10_scroll_up
+int10_dispatch_07:
+    cmpb $0x07, %ah
+    jne int10_dispatch_08
+    jmp int10_scroll_down
+int10_dispatch_08:
+    cmpb $0x08, %ah
+    jne int10_dispatch_09
+    jmp int10_read_character
+int10_dispatch_09:
+    cmpb $0x09, %ah
+    jne int10_dispatch_0a
+    jmp int10_write_character_attribute
+int10_dispatch_0a:
+    cmpb $0x0a, %ah
+    jne int10_dispatch_0e
+    jmp int10_write_character
+int10_dispatch_0e:
     cmpb $0x0e, %ah
+    jne int10_dispatch_0f
+    jmp int10_teletype
+int10_dispatch_0f:
+    cmpb $0x0f, %ah
+    jne int10_return
+    jmp int10_get_mode
+int10_return:
+    iretw
+
+int10_set_mode:
+    cmpb $3, %al
     jne int10_return
     pushw %ax
     pushw %bx
+    pushw %cx
+    pushw %dx
     pushw %di
     pushw %ds
     pushw %es
     xorw %bx, %bx
     movw %bx, %ds
-    cmpb $0x0d, %al
-    je int10_return_saved
-    cmpb $0x0a, %al
-    je int10_line_feed
-    movw BDA_CURSOR, %di
-    shlw $1, %di
     movw $0xb800, %bx
     movw %bx, %es
-    movb $0x07, %ah
-    stosw
-    shrw $1, %di
-    movw %di, BDA_CURSOR
-    jmp int10_return_saved
-int10_line_feed:
-    addw $80, BDA_CURSOR
-int10_return_saved:
+    xorw %di, %di
+    movw $0x0720, %ax
+    movw $8192, %cx
+    rep stosw
+    xorw %ax, %ax
+    movw %ax, BDA_PAGE_OFFSET
+    movw %ax, BDA_CURSOR
+    movw %ax, BDA_CURSOR+2
+    movw %ax, BDA_CURSOR+4
+    movw %ax, BDA_CURSOR+6
+    movw %ax, BDA_CURSOR+8
+    movw %ax, BDA_CURSOR+10
+    movw %ax, BDA_CURSOR+12
+    movw %ax, BDA_CURSOR+14
+    movb $3, BDA_VIDEO_MODE
+    movw $80, BDA_COLUMNS
+    movw $0x1000, BDA_PAGE_SIZE
+    movw $0x0607, BDA_CURSOR_SHAPE
+    movb $0, BDA_ACTIVE_PAGE
+    movb $0x29, BDA_MODE_CONTROL
+    movb $0, BDA_COLOR_SELECT
+    movw $0x03d8, %dx
+    movb $0x29, %al
+    outb %al, %dx
+    incw %dx
+    xorb %al, %al
+    outb %al, %dx
+    movw $0x03d4, %dx
+    movb $0x0a, %al
+    outb %al, %dx
+    incw %dx
+    movb $6, %al
+    outb %al, %dx
+    decw %dx
+    movb $0x0b, %al
+    outb %al, %dx
+    incw %dx
+    movb $7, %al
+    outb %al, %dx
+    xorw %ax, %ax
+    call video_program_start
+    call video_program_cursor
     popw %es
     popw %ds
     popw %di
+    popw %dx
+    popw %cx
     popw %bx
     popw %ax
-int10_return:
     iretw
+
+int10_set_cursor_shape:
+    pushw %ax
+    pushw %dx
+    pushw %ds
+    xorw %ax, %ax
+    movw %ax, %ds
+    movw %cx, BDA_CURSOR_SHAPE
+    movw $0x03d4, %dx
+    movb $0x0a, %al
+    outb %al, %dx
+    incw %dx
+    movb %ch, %al
+    outb %al, %dx
+    decw %dx
+    movb $0x0b, %al
+    outb %al, %dx
+    incw %dx
+    movb %cl, %al
+    outb %al, %dx
+    popw %ds
+    popw %dx
+    popw %ax
+    iretw
+
+int10_set_cursor_position:
+    cmpb $3, %bh
+    jbe int10_set_cursor_position_row
+    iretw
+int10_set_cursor_position_row:
+    cmpb $24, %dh
+    jbe int10_set_cursor_position_column
+    iretw
+int10_set_cursor_position_column:
+    cmpb $79, %dl
+    jbe int10_set_cursor_position_valid
+    iretw
+int10_set_cursor_position_valid:
+    pushw %ax
+    pushw %bx
+    pushw %si
+    pushw %ds
+    xorw %ax, %ax
+    movw %ax, %ds
+    movb %bh, %al
+    shlw $1, %ax
+    movw %ax, %si
+    movw %dx, BDA_CURSOR(%si)
+    movb %bh, %al
+    cmpb BDA_ACTIVE_PAGE, %al
+    jne int10_set_cursor_position_done
+    call video_program_cursor
+int10_set_cursor_position_done:
+    popw %ds
+    popw %si
+    popw %bx
+    popw %ax
+    iretw
+
+int10_get_cursor_position:
+    cmpb $3, %bh
+    jbe int10_get_cursor_position_valid
+    iretw
+int10_get_cursor_position_valid:
+    pushw %ax
+    pushw %bx
+    pushw %si
+    pushw %ds
+    xorw %ax, %ax
+    movw %ax, %ds
+    movb %bh, %al
+    shlw $1, %ax
+    movw %ax, %si
+    movw BDA_CURSOR(%si), %dx
+    movw BDA_CURSOR_SHAPE, %cx
+    popw %ds
+    popw %si
+    popw %bx
+    popw %ax
+    iretw
+
+int10_select_page:
+    cmpb $3, %al
+    jbe int10_select_page_valid
+    iretw
+int10_select_page_valid:
+    pushw %ax
+    pushw %bx
+    pushw %ds
+    xorw %bx, %bx
+    movw %bx, %ds
+    movb %al, BDA_ACTIVE_PAGE
+    movw %ax, %bx
+    andw $0x00ff, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    shlw $1, %bx
+    movw %bx, BDA_PAGE_OFFSET
+    call video_program_start
+    call video_program_cursor
+    popw %ds
+    popw %bx
+    popw %ax
+    iretw
+
+int10_scroll_up:
+    pushw %bp
+    xorw %bp, %bp
+    jmp int10_scroll_common
+int10_scroll_down:
+    pushw %bp
+    movw $1, %bp
+int10_scroll_common:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %si
+    pushw %di
+    pushw %ds
+    pushw %es
+    pushw %ax
+    xorw %ax, %ax
+    movw %ax, %ds
+    popw %ax
+    movw %bp, VIDEO_DIRECTION
+    cmpb $24, %ch
+    ja int10_scroll_done
+    cmpb $79, %cl
+    ja int10_scroll_done
+    cmpb $24, %dh
+    ja int10_scroll_done
+    cmpb $79, %dl
+    ja int10_scroll_done
+    cmpb %dh, %ch
+    ja int10_scroll_done
+    cmpb %dl, %cl
+    ja int10_scroll_done
+    movb %ch, VIDEO_TOP
+    movb %cl, VIDEO_LEFT
+    movb %dh, VIDEO_BOTTOM
+    movb %dl, VIDEO_RIGHT
+    movb %bh, VIDEO_ATTRIBUTE
+    movb BDA_ACTIVE_PAGE, %bl
+    movb %bl, VIDEO_PAGE
+    movb %dh, %bl
+    subb %ch, %bl
+    incb %bl
+    testb %al, %al
+    jz int10_scroll_all
+    cmpb %bl, %al
+    jbe int10_scroll_lines_ready
+int10_scroll_all:
+    movb %bl, %al
+int10_scroll_lines_ready:
+    movb %al, VIDEO_LINES
+    movw $0xb800, %bx
+    movw %bx, %es
+    movb VIDEO_ATTRIBUTE, %ah
+    movb $0x20, %al
+    movw %ax, %bp
+    cmpw $0, VIDEO_DIRECTION
+    jne int10_scroll_down_call
+    call video_scroll_up_internal
+    jmp int10_scroll_done
+int10_scroll_down_call:
+    call video_scroll_down_internal
+int10_scroll_done:
+    popw %es
+    popw %ds
+    popw %di
+    popw %si
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    popw %bp
+    iretw
+
+int10_read_character:
+    cmpb $3, %bh
+    jbe int10_read_character_valid
+    iretw
+int10_read_character_valid:
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %di
+    pushw %ds
+    pushw %es
+    xorw %ax, %ax
+    movw %ax, %ds
+    movb %bh, %al
+    call video_cursor_offset
+    movw $0xb800, %ax
+    movw %ax, %es
+    movw %es:(%di), %ax
+    popw %es
+    popw %ds
+    popw %di
+    popw %dx
+    popw %cx
+    popw %bx
+    iretw
+
+int10_write_character_attribute:
+    cmpb $3, %bh
+    jbe int10_write_character_attribute_valid
+    iretw
+int10_write_character_attribute_valid:
+    pushw %bp
+    movw $1, %bp
+    jmp int10_write_common
+int10_write_character:
+    cmpb $3, %bh
+    jbe int10_write_character_valid
+    iretw
+int10_write_character_valid:
+    pushw %bp
+    xorw %bp, %bp
+int10_write_common:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %di
+    pushw %ds
+    pushw %es
+    pushw %ax
+    xorw %ax, %ax
+    movw %ax, %ds
+    popw %ax
+    movw %bp, VIDEO_LINES
+    movb %al, VIDEO_CHARACTER
+    movb %bh, %al
+    call video_cursor_offset
+    movw $0xb800, %ax
+    movw %ax, %es
+    cmpb $0, VIDEO_LINES
+    je int10_write_character_loop
+    movb VIDEO_CHARACTER, %al
+    movb %bl, %ah
+int10_write_character_attribute_loop:
+    testw %cx, %cx
+    jz int10_write_done
+    movw %ax, %es:(%di)
+    addw $2, %di
+    decw %cx
+    jmp int10_write_character_attribute_loop
+int10_write_character_loop:
+    testw %cx, %cx
+    jz int10_write_done
+    movb VIDEO_CHARACTER, %al
+    movb %al, %es:(%di)
+    addw $2, %di
+    decw %cx
+    jmp int10_write_character_loop
+int10_write_done:
+    popw %es
+    popw %ds
+    popw %di
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    popw %bp
+    iretw
+
+int10_teletype:
+    cmpb $3, %bh
+    jbe int10_teletype_valid
+    iretw
+int10_teletype_valid:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %si
+    pushw %di
+    pushw %bp
+    pushw %ds
+    pushw %es
+    pushw %ax
+    xorw %ax, %ax
+    movw %ax, %ds
+    popw %ax
+    movb %al, VIDEO_CHARACTER
+    xorw %ax, %ax
+    movb %bh, %al
+    shlw $1, %ax
+    movw %ax, %si
+    movw BDA_CURSOR(%si), %dx
+    cmpb $7, VIDEO_CHARACTER
+    je int10_teletype_store
+    cmpb $8, VIDEO_CHARACTER
+    je int10_teletype_backspace
+    cmpb $13, VIDEO_CHARACTER
+    je int10_teletype_carriage_return
+    cmpb $10, VIDEO_CHARACTER
+    je int10_teletype_line_feed
+    movb %bh, %al
+    call video_offset
+    movw $0xb800, %ax
+    movw %ax, %es
+    movb VIDEO_CHARACTER, %al
+    movb %al, %es:(%di)
+    incb %dl
+    cmpb $80, %dl
+    jb int10_teletype_store
+    movb $0, %dl
+    incb %dh
+    jmp int10_teletype_check_scroll
+int10_teletype_backspace:
+    testb %dl, %dl
+    jz int10_teletype_store
+    decb %dl
+    jmp int10_teletype_store
+int10_teletype_carriage_return:
+    movb $0, %dl
+    jmp int10_teletype_store
+int10_teletype_line_feed:
+    incb %dh
+int10_teletype_check_scroll:
+    cmpb $25, %dh
+    jb int10_teletype_store
+    movb $24, %dh
+    movb $0, VIDEO_TOP
+    movb $0, VIDEO_LEFT
+    movb $24, VIDEO_BOTTOM
+    movb $79, VIDEO_RIGHT
+    movb $1, VIDEO_LINES
+    movb $7, VIDEO_ATTRIBUTE
+    movb %bh, VIDEO_PAGE
+    movw $0xb800, %ax
+    movw %ax, %es
+    movw $0x0720, %bp
+    pushw %dx
+    call video_scroll_up_internal
+    popw %dx
+int10_teletype_store:
+    xorw %ax, %ax
+    movb %bh, %al
+    shlw $1, %ax
+    movw %ax, %si
+    movw %dx, BDA_CURSOR(%si)
+    movb %bh, %al
+    cmpb BDA_ACTIVE_PAGE, %al
+    jne int10_teletype_done
+    call video_program_cursor
+int10_teletype_done:
+    popw %es
+    popw %ds
+    popw %bp
+    popw %di
+    popw %si
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    iretw
+
+int10_get_mode:
+    pushw %ds
+    pushw %dx
+    xorw %dx, %dx
+    movw %dx, %ds
+    movb BDA_VIDEO_MODE, %al
+    movb BDA_COLUMNS, %ah
+    movb BDA_ACTIVE_PAGE, %bh
+    popw %dx
+    popw %ds
+    iretw
+
+// Convert page AL and row/column DH:DL to a byte offset in the 16 KiB CGA
+// window. DS must address the BDA. BX/CX/DX/BP are preserved; AX is scratch.
+video_offset:
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %bp
+    movw %dx, %bp
+    xorw %bx, %bx
+    movb %al, %bl
+    movb $12, %cl
+    shlw %cl, %bx
+    movw %bp, %ax
+    movb %ah, %al
+    xorb %ah, %ah
+    movw $160, %cx
+    mulw %cx
+    addw %ax, %bx
+    movw %bp, %ax
+    andw $0x00ff, %ax
+    shlw $1, %ax
+    addw %bx, %ax
+    movw %ax, %di
+    popw %bp
+    popw %dx
+    popw %cx
+    popw %bx
+    ret
+
+// Convert the saved cursor for page AL to its CGA byte offset.
+video_cursor_offset:
+    pushw %ax
+    pushw %si
+    xorb %ah, %ah
+    movw %ax, %si
+    shlw $1, %si
+    movw BDA_CURSOR(%si), %dx
+    popw %si
+    popw %ax
+    call video_offset
+    ret
+
+// Program CRTC start address for page AL (CGA word addressing).
+video_program_start:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    xorw %bx, %bx
+    movb %al, %bl
+    movb $11, %cl
+    shlw %cl, %bx
+    movw $0x03d4, %dx
+    movb $0x0c, %al
+    outb %al, %dx
+    incw %dx
+    movb %bh, %al
+    outb %al, %dx
+    decw %dx
+    movb $0x0d, %al
+    outb %al, %dx
+    incw %dx
+    movb %bl, %al
+    outb %al, %dx
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    ret
+
+// Program the hardware cursor from the BDA position for page AL.
+video_program_cursor:
+    pushw %ax
+    pushw %bx
+    pushw %cx
+    pushw %dx
+    pushw %si
+    pushw %di
+    call video_cursor_offset
+    shrw $1, %di
+    movw $0x03d4, %dx
+    movb $0x0e, %al
+    outb %al, %dx
+    incw %dx
+    movw %di, %bx
+    movb %bh, %al
+    outb %al, %dx
+    decw %dx
+    movb $0x0f, %al
+    outb %al, %dx
+    incw %dx
+    movb %bl, %al
+    outb %al, %dx
+    popw %di
+    popw %si
+    popw %dx
+    popw %cx
+    popw %bx
+    popw %ax
+    ret
+
+// Scroll helpers use the validated rectangle and target page in BDA scratch.
+// ES is B800h and BP is the blank character/attribute word.
+video_scroll_up_internal:
+    movb VIDEO_TOP, %dh
+    addb VIDEO_LINES, %dh
+video_scroll_up_copy_row:
+    cmpb VIDEO_BOTTOM, %dh
+    ja video_scroll_up_blank_start
+    movb VIDEO_LEFT, %dl
+    movb VIDEO_PAGE, %al
+    call video_offset
+    movw %di, %si
+    subb VIDEO_LINES, %dh
+    movb VIDEO_PAGE, %al
+    call video_offset
+    addb VIDEO_LINES, %dh
+    xorw %cx, %cx
+    movb VIDEO_RIGHT, %cl
+    subb VIDEO_LEFT, %cl
+    incw %cx
+video_scroll_up_copy_cell:
+    movw %es:(%si), %ax
+    movw %ax, %es:(%di)
+    addw $2, %si
+    addw $2, %di
+    loop video_scroll_up_copy_cell
+    incb %dh
+    jmp video_scroll_up_copy_row
+video_scroll_up_blank_start:
+    movb VIDEO_BOTTOM, %dh
+    subb VIDEO_LINES, %dh
+    incb %dh
+video_scroll_up_blank_row:
+    cmpb VIDEO_BOTTOM, %dh
+    jbe video_scroll_up_blank_row_valid
+    jmp video_scroll_done
+video_scroll_up_blank_row_valid:
+    movb VIDEO_LEFT, %dl
+    movb VIDEO_PAGE, %al
+    call video_offset
+    xorw %cx, %cx
+    movb VIDEO_RIGHT, %cl
+    subb VIDEO_LEFT, %cl
+    incw %cx
+video_scroll_up_blank_cell:
+    movw %bp, %es:(%di)
+    addw $2, %di
+    loop video_scroll_up_blank_cell
+    incb %dh
+    jmp video_scroll_up_blank_row
+
+video_scroll_down_internal:
+    movb VIDEO_BOTTOM, %dh
+    movb VIDEO_BOTTOM, %al
+    subb VIDEO_TOP, %al
+    incb %al
+    cmpb VIDEO_LINES, %al
+    je video_scroll_down_blank_start
+    subb VIDEO_LINES, %dh
+video_scroll_down_copy_row:
+    cmpb VIDEO_TOP, %dh
+    jb video_scroll_down_blank_start
+    movb VIDEO_LEFT, %dl
+    movb VIDEO_PAGE, %al
+    call video_offset
+    movw %di, %si
+    addb VIDEO_LINES, %dh
+    movb VIDEO_PAGE, %al
+    call video_offset
+    subb VIDEO_LINES, %dh
+    xorw %cx, %cx
+    movb VIDEO_RIGHT, %cl
+    subb VIDEO_LEFT, %cl
+    incw %cx
+video_scroll_down_copy_cell:
+    movw %es:(%si), %ax
+    movw %ax, %es:(%di)
+    addw $2, %si
+    addw $2, %di
+    loop video_scroll_down_copy_cell
+    cmpb VIDEO_TOP, %dh
+    je video_scroll_down_blank_start
+    decb %dh
+    jmp video_scroll_down_copy_row
+video_scroll_down_blank_start:
+    movb VIDEO_TOP, %dh
+video_scroll_down_blank_row:
+    movb VIDEO_TOP, %al
+    addb VIDEO_LINES, %al
+    cmpb %al, %dh
+    jae video_scroll_done
+    movb VIDEO_LEFT, %dl
+    movb VIDEO_PAGE, %al
+    call video_offset
+    xorw %cx, %cx
+    movb VIDEO_RIGHT, %cl
+    subb VIDEO_LEFT, %cl
+    incw %cx
+video_scroll_down_blank_cell:
+    movw %bp, %es:(%di)
+    addw $2, %di
+    loop video_scroll_down_blank_cell
+    incb %dh
+    jmp video_scroll_down_blank_row
+video_scroll_done:
+    ret
 
 // INT 16h: AH=00h waits and consumes a key; AH=01h peeks and returns ZF.
 int16_handler:

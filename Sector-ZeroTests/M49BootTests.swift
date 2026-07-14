@@ -72,7 +72,7 @@ struct M49BootTests {
     @Test("An unmodified diagnostic boot sector executes and prints through BIOS video")
     func diagnosticSectorExecutes() throws {
         let machine = try machine(with: diagnosticBootSector(message: "BOOT OK"))
-        let result = machine.runSlice(maxInstructions: 8_192)
+        let result = machine.runSlice(maxInstructions: 30_000)
 
         #expect(result.stopReason == .halted)
         #expect(result.snapshot.cpu.fault == nil)
@@ -84,14 +84,14 @@ struct M49BootTests {
     func bootFailures() throws {
         let missingMedia = Machine()
         try missingMedia.loadSystemROM(Data(contentsOf: firmwareURL))
-        var result = missingMedia.runSlice(maxInstructions: 8_192)
+        var result = missingMedia.runSlice(maxInstructions: 30_000)
         #expect(result.stopReason == .halted)
         #expect(result.snapshot.diagnosticPort.lastCode == 0xE1)
         var screen = String(decoding: result.snapshot.video.cells.map(\.codePoint), as: UTF8.self)
         #expect(screen.contains("BOOT READ FAIL"))
 
         let badSignature = try machine(with: diagnosticBootSector(message: "NO", validSignature: false))
-        result = badSignature.runSlice(maxInstructions: 8_192)
+        result = badSignature.runSlice(maxInstructions: 30_000)
         #expect(result.stopReason == .halted)
         #expect(result.snapshot.diagnosticPort.lastCode == 0xE2)
         screen = String(decoding: result.snapshot.video.cells.map(\.codePoint), as: UTF8.self)

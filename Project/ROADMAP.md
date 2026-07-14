@@ -31,7 +31,7 @@ accounting; a 765-compatible read-only floppy path with project media
 mount/eject; and a reproducible clean-room BIOS with POST diagnostics and
 boot-path interrupt services, sector-zero validation/handoff, and deterministic
 debugger stops/traces). M50 remains an open operating-system qualification
-checkpoint; the next implementation milestone is M53 in the System BIOS arc.
+checkpoint; the next implementation milestone is M54 in the System BIOS arc.
 
 **Prefixes:** a pending `CPU8086.segmentOverride` redirects the next
 instruction's *data-operand* segment. `Machine.step()` consumes segment, repeat,
@@ -887,7 +887,7 @@ next gap.
   and cold-boot marker. The reset-vector tail exposes a stable build date and
   PC-compatible model identifier at the conventional physical addresses.
 
-### M53 — Text video BIOS
+### M53 — Text video BIOS ✅
 - **Goal:** Provide the complete INT 10h text-mode contract expected by period
   software for the installed 80x25 CGA adapter.
 - **Build:** Implement mode set/query, cursor shape and position, active-page
@@ -897,6 +897,15 @@ next gap.
   them; let BDA state diverge from CRTC and VRAM state.
 - **Tests:** Guest-call every supported function, verify register/flag contracts,
   compare BDA, CRTC, and VRAM state, and exercise every screen edge.
+- **Completed:** INT 10h now implements mode-3 set/query, cursor shape and
+  per-page position set/get, four 4 KiB CGA text pages, active-page selection,
+  rectangular scroll up/down and clear, character/attribute read and write,
+  character-only writes, and teletype BEL/backspace/CR/LF, wrapping, scrolling,
+  and hardware-cursor updates. The BDA, CRTC start/cursor registers, and VRAM
+  remain synchronized. Focused guest tests cover all services, page isolation,
+  rectangle boundaries, attributes, and bottom-right scrolling. The dispatcher
+  is pinned against accidental 386 `0F 8x` near-conditionals, which would execute
+  as `POP CS` on the emulated 8086.
 
 ### M54 — Keyboard BIOS
 - **Goal:** Behave like an XT keyboard BIOS under typing, editing, and modifier

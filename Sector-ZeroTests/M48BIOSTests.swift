@@ -55,7 +55,7 @@ struct M48BIOSTests {
     private func bootMachine() throws -> Machine {
         let machine = Machine()
         try machine.loadSystemROM(Data(contentsOf: firmwareURL))
-        let result = machine.runSlice(maxInstructions: 4_096)
+        let result = machine.runSlice(maxInstructions: 30_000)
         #expect(result.stopReason == .halted)
         #expect(result.snapshot.cpu.fault == nil)
         #expect(result.snapshot.diagnosticPort.codes.contains(0xAA))
@@ -124,7 +124,7 @@ struct M48BIOSTests {
 
             let machine = Machine()
             try machine.loadSystemROM(Data(contentsOf: outputURL))
-            let result = machine.runSlice(maxInstructions: 4_096)
+            let result = machine.runSlice(maxInstructions: 30_000)
             #expect(result.stopReason == .halted)
             #expect(result.snapshot.cpu.fault == nil)
             #expect(result.snapshot.diagnosticPort.lastCode == 0xF0 | UInt8(component))
@@ -142,6 +142,7 @@ struct M48BIOSTests {
         let machine = try bootMachine()
         let cursor = machine.bus.readWord(at: 0x0450)
         _ = machine.cpu.execute(.movImmediateToRegister16(.ax, 0x0E58)) // AH=0Eh, AL='X'.
+        _ = machine.cpu.execute(.movImmediateToRegister16(.bx, 0))
 
         var result = callBIOS(0x10, on: machine)
         #expect(result.stopReason == .halted)

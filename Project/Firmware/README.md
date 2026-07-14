@@ -53,3 +53,10 @@ IRQs. It publishes conventional equipment, memory-size, disk-status, mode-3
 video, timer-rollover, and warm-boot fields in the BIOS data area. The standard
 top-of-ROM identity locations contain the stable build date `07/13/26` and the
 PC-compatible model byte `FFh`.
+
+M53 completes the BIOS interface for the installed 80x25 CGA text mode. INT 10h
+now supports mode set/query, cursor shape and per-page positions, four active
+pages, rectangular scrolling and clearing, character/attribute reads and writes,
+and teletype control characters with wrapping and scrolling. BDA, CRTC, and VRAM
+state remain synchronized. Long dispatch branches use explicit 8086-safe short
+conditions plus near jumps; the ROM never relies on the later `0F 8x` encoding.
