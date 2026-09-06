@@ -66,13 +66,13 @@ fragment float4 crtFragment(VertexOut in [[stage_in]],
     glow += frameTexture.sample(frameSampler, uv + texelSize * float2(-1.7, -1.7)).rgb;
     glow *= 0.125;
 
-    // Scanlines follow framebuffer rows (not device pixels), with a gaussian
-    // beam profile, and fade out as rows approach one device pixel so high
-    // scaling never produces moiré or a uniformly dark screen.
+    // Scanlines follow framebuffer rows (not device pixels). Keep the beam
+    // deliberately narrow with deep gaps: the tube should read as distinct
+    // horizontal scan lines instead of a gentle overall dimming.
     float rowsPerDevicePixel = fbSize.y / max(uniforms.viewportSize.y, 1.0);
-    float scanStrength = 0.32 * smoothstep(0.55, 0.18, rowsPerDevicePixel);
+    float scanStrength = 0.58 * smoothstep(0.70, 0.16, rowsPerDevicePixel);
     float beamOffset = fract(texel.y) - 0.5;
-    float beam = exp(-beamOffset * beamOffset * 7.0);
+    float beam = exp(-beamOffset * beamOffset * 22.0);
     float scanline = 1.0 - scanStrength * (1.0 - beam);
 
     // Gentle shading toward the edges — presence, not darkness.

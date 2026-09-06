@@ -76,6 +76,12 @@ final class Machine {
     private var clockedDevices: [any ClockedDevice] = []
     private let hostScanCodes = HostScanCodeInbox()
 
+    /// An explicit host-side accelerator used only at Unlimited run speed.
+    /// It batches a continuously asserted floppy DMA request, but preserves
+    /// transferred bytes, 8237 clock charges, terminal count, and the FDC IRQ.
+    /// Normal runs retain one-byte DMA arbitration for hardware investigation.
+    var turboFloppyDMAEnabled = false
+
     init(memory: Memory = Memory()) {
         self.memory = memory
         self.bus = EmulatorBus(memory: memory)
@@ -494,13 +500,22 @@ final class Machine {
 
     private func serviceFloppyDMAIfRequested() {
         guard floppyController.dmaRequestActive else { return }
-        let result = bus.serviceDMAChannel2(
-            deviceRead: floppyController.takeDMAByte,
-            deviceWrite: floppyController.putDMAByte
-        )
-        guard result.transferred else { return }
-        advanceClock(by: result.clocks)
-        floppyController.completeDMAService(result)
+        var elapsedClocks = 0
+        var transfers = 0
+        repeat {
+            let result = bus.serviceDMAChannel2(
+                deviceRead: floppyController.takeDMAByte,
+                deviceWrite: floppyController.putDMAByte
+            )
+            guard result.transferred else { break }
+            elapsedClocks += result.clocks
+            floppyController.completeDMAService(result)
+            transfers += 1
+        } while turboFloppyDMAEnabled
+            && transfers < 4_096
+            && floppyController.dmaRequestActive
+            && dmaController.canServiceChannel2
+        if elapsedClocks > 0 { advanceClock(by: elapsedClocks) }
     }
 
     private func resumeRepeatedInstructionIfNeeded() -> Bool {

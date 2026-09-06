@@ -11,7 +11,11 @@ struct NewProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var projectName = ""
-    @State private var destinationFolderURL: URL? = Self.defaultDestinationFolderURL
+    @State private var destinationFolderURL: URL?
+    @State private var floppyAURL: URL?
+    @State private var floppyBURL: URL?
+    @State private var hardDiskURL: URL?
+    @State private var createsBlankHardDisk = false
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
@@ -28,6 +32,9 @@ struct NewProjectSheet: View {
         .background(Color.sectorWorkspace)
         .onAppear {
             isNameFocused = true
+            if destinationFolderURL == nil {
+                destinationFolderURL = workspace.libraryFolderURL
+            }
         }
     }
 
@@ -78,6 +85,33 @@ struct NewProjectSheet: View {
                     .focused($isNameFocused)
                     .onSubmit(createProject)
                     .accessibilityIdentifier("machineNameField")
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
+                SectorSectionLabel(title: "INITIAL DRIVES", systemImage: "internaldrive")
+                Text("Choose media now, or leave any drive empty and manage it later.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.sectorMutedText)
+                creationDriveRow("Floppy A", icon: "externaldrive", url: $floppyAURL, action: "Insert")
+                creationDriveRow("Floppy B", icon: "externaldrive", url: $floppyBURL, action: "Insert")
+                HStack(spacing: 10) {
+                    Image(systemName: "internaldrive")
+                        .foregroundStyle(Color.sectorHeading)
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hard Disk C").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.sectorText)
+                        Text(hardDiskURL?.lastPathComponent ?? (createsBlankHardDisk ? "New blank 20 MB disk" : "Empty"))
+                            .font(.sectorMono(10, weight: .regular)).foregroundStyle(Color.sectorMutedText).lineLimit(1)
+                    }
+                    Spacer()
+                    if hardDiskURL == nil {
+                        Toggle("20 MB", isOn: $createsBlankHardDisk).toggleStyle(.checkbox).controlSize(.small)
+                    }
+                    Button(hardDiskURL == nil ? "Attach" : "Clear") {
+                        if hardDiskURL == nil { chooseMedia { hardDiskURL = $0; createsBlankHardDisk = false } } else { hardDiskURL = nil }
+                    }.controlSize(.small)
+                }
+                .padding(10).sectorCard(fill: .sectorElevated)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -163,7 +197,7 @@ struct NewProjectSheet: View {
     }
 
     private var canCreateProject: Bool {
-        !trimmedProjectName.isEmpty && destinationFolderURL != nil
+        !trimmedProjectName.isEmpty && destinationFolderURL != nil && workspace.libraryFolderURL != nil
     }
 
     private var trimmedProjectName: String {
@@ -184,9 +218,12 @@ struct NewProjectSheet: View {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
+        panel.directoryURL = workspace.libraryFolderURL ?? Self.defaultDestinationFolderURL
 
         guard panel.runModal() == .OK else { return }
-        destinationFolderURL = panel.url
+        guard let url = panel.url else { return }
+        guard workspace.setLibraryFolder(url) else { return }
+        destinationFolderURL = url
         #else
         workspace.errorMessage = "Choosing a destination folder is only available on macOS."
         #endif
@@ -194,9 +231,39 @@ struct NewProjectSheet: View {
 
     private func createProject() {
         guard canCreateProject, let destinationFolderURL else { return }
-        if workspace.createProject(named: trimmedProjectName, in: destinationFolderURL) {
+        guard workspace.setLibraryFolder(destinationFolderURL) else { return }
+        // URLs returned by NSOpenPanel are security scoped in the sandbox. The
+        // scope must remain open for the complete package-creation transaction,
+        // not merely while the picker itself is visible.
+        let scopedURLs = [destinationFolderURL, floppyAURL, floppyBURL, hardDiskURL].compactMap { $0 }
+        let accessedURLs = scopedURLs.filter { $0.startAccessingSecurityScopedResource() }
+        defer { accessedURLs.forEach { $0.stopAccessingSecurityScopedResource() } }
+        if workspace.createProject(named: trimmedProjectName, in: destinationFolderURL, floppyAURL: floppyAURL, floppyBURL: floppyBURL, hardDiskURL: hardDiskURL, createBlankHardDisk: createsBlankHardDisk) {
             dismiss()
         }
+    }
+
+    private func creationDriveRow(_ title: String, icon: String, url: Binding<URL?>, action: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundStyle(Color.sectorHeading).frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.sectorText)
+                Text(url.wrappedValue?.lastPathComponent ?? "Empty").font(.sectorMono(10, weight: .regular)).foregroundStyle(Color.sectorMutedText).lineLimit(1)
+            }
+            Spacer()
+            Button(url.wrappedValue == nil ? action : "Clear") {
+                if url.wrappedValue == nil { chooseMedia { url.wrappedValue = $0 } } else { url.wrappedValue = nil }
+            }.controlSize(.small)
+        }
+        .padding(10).sectorCard(fill: .sectorElevated)
+    }
+
+    private func chooseMedia(_ completion: @escaping (URL) -> Void) {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Disk Image"; panel.prompt = "Choose"; panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url { completion(url) }
+        #endif
     }
 
     private static var defaultDestinationFolderURL: URL? {

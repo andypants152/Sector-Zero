@@ -7,6 +7,9 @@ import AppKit
 
 struct ProjectBrowserView: View {
     @Bindable var workspace: SectorZeroWorkspace
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
     var isCompact = false
 
     @State private var isShowingNewProject = false
@@ -124,6 +127,17 @@ struct ProjectBrowserView: View {
             .buttonStyle(SectorToolbarButtonStyle())
             .help("Open an existing Sector Zero machine")
             .accessibilityIdentifier("openMachineButton")
+
+            #if os(macOS)
+            Button {
+                chooseLibraryFolder()
+            } label: {
+                Image(systemName: "folder.badge.gearshape")
+            }
+            .buttonStyle(SectorToolbarButtonStyle())
+            .help("Choose the folder Sector Zero can manage")
+            .accessibilityIdentifier("chooseLibraryFolderButton")
+            #endif
         }
     }
 
@@ -159,6 +173,14 @@ struct ProjectBrowserView: View {
             .buttonStyle(.borderless)
             .disabled(workspace.isRunning)
             .accessibilityIdentifier("editMachineButton")
+
+            #if os(macOS)
+            Button("Floppy Library…", systemImage: "externaldrive.badge.plus") {
+                openWindow(id: "floppy-library")
+            }
+            .buttonStyle(.borderless)
+            .disabled(workspace.isRunning)
+            #endif
         }
     }
 
@@ -477,9 +499,27 @@ struct ProjectBrowserView: View {
         panel.allowsMultipleSelection = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard workspace.setLibraryFolder(url.deletingLastPathComponent()) else { return }
         workspace.openProject(at: url)
         #else
         isImportingProject = true
+        #endif
+    }
+
+    private func chooseLibraryFolder() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Sector Zero Library Folder"
+        panel.message = "Sector Zero will retain permission to create machines and save their media in this folder."
+        panel.prompt = "Use Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = workspace.libraryFolderURL
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = workspace.setLibraryFolder(url)
         #endif
     }
 

@@ -1767,6 +1767,13 @@ int13_handler:
     iretw
 
 int13_fixed_dispatch:
+    // Fixed-disk BDA and request scratch fields live in segment zero. Preserve
+    // the caller's arbitrary DS for the full fixed-disk dispatch.
+    pushw %ds
+    pushw %ax
+    xorw %ax, %ax
+    movw %ax, %ds
+    popw %ax
     cmpb $0x80, %dl
     je 1f
     jmp int13_fixed_bad_request
@@ -1806,6 +1813,7 @@ int13_fixed_status:
     testb %ah, %ah
     jz int13_fixed_success
     orb $1, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 
@@ -1821,6 +1829,7 @@ int13_fixed_success:
     xorw %ax, %ax
     movb %ah, BDA_FIXED_STATUS
     andb $0xfe, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 
@@ -1850,6 +1859,7 @@ int13_fixed_parameters:
     xorw %ax, %ax
     movb %ah, BDA_FIXED_STATUS
     andb $0xfe, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 
@@ -1880,6 +1890,7 @@ int13_fixed_type:
     movb $3, %ah
     movb $0, BDA_FIXED_STATUS
     andb $0xfe, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 
@@ -2019,6 +2030,7 @@ int13_fixed_transfer_done:
     popw %dx
     popw %cx
     popw %bx
+    popw %ds
     popw %bp
     iretw
 
@@ -2031,6 +2043,7 @@ int13_fixed_controller_error:
     xorb %al, %al
     movb %ah, BDA_FIXED_STATUS
     orb $1, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 int13_fixed_bad_request:
@@ -2038,6 +2051,7 @@ int13_fixed_bad_request:
     xorb %al, %al
     movb %ah, BDA_FIXED_STATUS
     orb $1, 6(%bp)
+    popw %ds
     popw %bp
     iretw
 

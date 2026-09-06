@@ -103,7 +103,14 @@ files in either synchronized folder are auto-included (no `.xcodeproj` edits nee
 Also: decoder tests that feed fixed byte streams must supply as many bytes as the
 *longest* decode can pull (currently 5: `81` mod=00 r/m=110) — a drained stream's
 `removeFirst()` traps and takes the whole suite down with it (the test host is the
-app itself, so the crash report looks like an app crash).
+app itself, so the crash report looks like an app crash). Wall-clock timing
+assertions are load-fragile in this suite: test classes run in parallel and
+workspace state publishes through the main actor, which parallel load can delay
+by seconds. Assert promptness on a single thread with no task resumption inside
+the measured span (`WorkspaceRunTests` times `SectorZeroWorkspace.throttle`
+directly, off the main actor); assert run outcomes by value through
+`MachineRunControl.terminalStopReason()` (delivered on the execution queue),
+never by timing; and give eventual-state waits a generous window (~10 s).
 
 Run tests:
 
@@ -830,7 +837,8 @@ deviations and deferred behavior are recorded in [`MACHINE_PROFILE.md`](MACHINE_
 - **Progress:** An external, unmodified PC DOS 2.00 reference image now reaches a
   stable `A>` prompt after date/time input. The trace-driven compatibility fixes
   add the standard INT 11h/12h/14h/17h contracts, preserve the DMA page across
-  BIOS INT 13h count arithmetic, translate BIOS editing controls, and retain a
+  BIOS INT 13h count arithmetic, isolate fixed-disk BDA/scratch access from the
+  caller's DS, translate BIOS editing controls, and retain a
   bounded CHS/DMA read history. Bounded instruction traces are rolling windows,
   so timeout and fault reports retain the boundaries immediately before the
   stop. Fixture-independent regressions cover those contracts. The pinned

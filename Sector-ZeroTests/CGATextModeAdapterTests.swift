@@ -165,8 +165,11 @@ struct CGATextModeAdapterTests {
 
         #expect(frame.width == 640)
         #expect(frame.height == 400)
+        // Corner pixels fall on blank glyph rows, so they read as each cell's
+        // background. The real CP437 'A' has a blank top row, so sample the
+        // crossbar (glyph row 8) for the foreground instead of row 1.
         #expect(pixel(in: frame, x: 0, y: 0) == ConsoleColor.blue.frameBufferColor)
-        #expect(pixel(in: frame, x: 3, y: 1) == ConsoleColor.yellow.frameBufferColor)
+        #expect(pixel(in: frame, x: 3, y: 8) == ConsoleColor.yellow.frameBufferColor)
         #expect(pixel(in: frame, x: 639, y: 399) == ConsoleColor.red.frameBufferColor)
     }
 

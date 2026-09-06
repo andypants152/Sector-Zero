@@ -15,8 +15,11 @@ struct WorkspaceStatusTests {
         return SectorZeroWorkspace(machine: machine)
     }
 
+    /// Generous by design: these waits observe state published through the
+    /// main actor, which parallel suite load can delay well past a tight
+    /// window. Nothing here asserts wall-clock promptness.
     private func waitUntil(
-        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        timeoutNanoseconds: UInt64 = 10_000_000_000,
         _ condition: @escaping @MainActor () -> Bool
     ) async -> Bool {
         let deadline = ContinuousClock.now + .nanoseconds(Int64(timeoutNanoseconds))

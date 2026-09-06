@@ -75,7 +75,8 @@ private protocol is incorporated. The adapter occupies ports 02A0h–02A9h and
 supports reset (00h), read (20h), write (30h), and identify (ECh). IDENTIFY
 publishes maximum cylinder, maximum head, and sectors per track through the CHS
 registers. Sector Zero accepts exact raw CHS images and can create the classic
-615/4/17 geometry (21,411,840 bytes).
+615/4/17 geometry (21,411,840 bytes). Fixed-disk INT 13h handlers preserve the
+caller's DS while using segment zero for BIOS data and request scratch fields.
 
 ## Diagnostic firmware ladder
 

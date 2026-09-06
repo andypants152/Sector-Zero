@@ -34,13 +34,15 @@ struct FixedDiskBIOSTests {
         bx: UInt16 = 0,
         cx: UInt16 = 0,
         dx: UInt16 = 0x0080,
-        es: UInt16 = 0
+        es: UInt16 = 0,
+        ds: UInt16 = 0
     ) -> MachineRunSlice {
         _ = machine.cpu.execute(.movImmediateToRegister16(.ax, ax))
         _ = machine.cpu.execute(.movImmediateToRegister16(.bx, bx))
         _ = machine.cpu.execute(.movImmediateToRegister16(.cx, cx))
         _ = machine.cpu.execute(.movImmediateToRegister16(.dx, dx))
         machine.cpu.writeSegment(es, to: .es)
+        machine.cpu.writeSegment(ds, to: .ds)
         machine.cpu.acceptInterrupt(type: 0x13, returnCS: machine.cpu.cs, returnIP: machine.cpu.ip)
         return machine.runSlice(maxInstructions: 20_000)
     }
@@ -70,6 +72,19 @@ struct FixedDiskBIOSTests {
         #expect(!machine.cpu.flags[.carry])
         #expect((0..<512).allSatisfy { machine.bus.readByte(at: 0x3400 + UInt32($0)) == 0xC3 })
         #expect(machine.snapshot().blockDiskController.writeCount == 1)
+    }
+
+    @Test("Fixed-disk INT 13h preserves a high caller DS and keeps BIOS scratch in segment zero")
+    func highCallerDataSegment() throws {
+        let machine = try boot()
+
+        let result = call(machine, ax: 0x0201, bx: 0x3000, cx: 0x0002, ds: 0xF290)
+
+        #expect(result.stopReason == .halted)
+        #expect(!machine.cpu.flags[.carry])
+        #expect(machine.cpu.ds == 0xF290)
+        #expect(machine.bus.readByte(at: 0x3000) == 1)
+        #expect(machine.snapshot().lastMemoryMapError == nil)
     }
 
     @Test("Fixed-disk status reports DMA-window and absent-media errors")

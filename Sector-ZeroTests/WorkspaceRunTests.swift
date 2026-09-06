@@ -19,8 +19,11 @@ struct WorkspaceRunTests {
         return defaults
     }
 
+    /// Generous by design: these waits observe state published through the
+    /// main actor, which parallel suite load can delay. Promptness is
+    /// asserted separately, measured off the main actor.
     private func waitUntil(
-        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        timeoutNanoseconds: UInt64 = 10_000_000_000,
         _ condition: @escaping @MainActor () -> Bool
     ) async -> Bool {
         let deadline = ContinuousClock.now + .nanoseconds(Int64(timeoutNanoseconds))
@@ -81,7 +84,7 @@ struct WorkspaceRunTests {
         #expect(workspace.machineSnapshot.cycleCount > 0)
     }
 
-    @Test("PAUSE interrupts a pending speed-cap wait promptly")
+    @Test("PAUSE interrupts a pending speed-cap wait")
     func pauseInterruptsThrottle() async {
         // AAM (83 clocks) plus the short jump (15 clocks) makes each 2,048
         // instruction slice take about 0.4 seconds at 250 KHz.
@@ -90,12 +93,63 @@ struct WorkspaceRunTests {
 
         workspace.run()
         try? await Task.sleep(nanoseconds: 50_000_000)
-        let pauseStarted = Date.timeIntervalSinceReferenceDate
         workspace.pause()
 
+        // The run loop delivers the terminal stop reason on its own execution
+        // queue. Delivery is guaranteed, so this assertion is deterministic.
+        // Promptness of the speed-cap wait itself is asserted off the main
+        // actor in `throttleHonorsPendingPause`, where no cross-thread hop
+        // falls inside the measured span.
+        #expect(await Self.runStopReason(control: workspace.runControl) == .paused)
+
         #expect(await waitUntil { !workspace.isRunning })
-        #expect(Date.timeIntervalSinceReferenceDate - pauseStarted < 0.2)
         #expect(workspace.lastRunStopReason == .paused)
+    }
+
+    /// Awaits the run's terminal stop reason off the main actor so the
+    /// delivery hop does not block the main thread under parallel suite load.
+    private nonisolated static func runStopReason(
+        control: MachineRunControl
+    ) async -> MachineRunStopReason? {
+        await control.terminalStopReason()
+    }
+
+    @Test("The speed-cap throttle exits immediately when a pause is already pending")
+    func throttleHonorsPendingPause() async {
+        // A 100_000-clock slice at 250 KHz leaves 0.4 seconds on the throttle
+        // deadline. With a pause already pending, the poll loop must exit on
+        // its first check instead of sleeping toward the deadline.
+        let elapsed = await Self.throttleElapsed(cap: .khz250, pausePending: true)
+        #expect(elapsed < 0.1)
+    }
+
+    @Test("The speed-cap throttle spends the full slice when no pause is pending")
+    func throttleWaitsFullDeadline() async {
+        // The same slice at PC/XT speed costs about 21 ms of host time. Without
+        // a pause the throttle must actually spend that time, keeping the
+        // machine at or below the configured speed.
+        let elapsed = await Self.throttleElapsed(cap: .pcXT, pausePending: false)
+        #expect(elapsed >= 0.015)
+        #expect(elapsed < 1.0)
+    }
+
+    /// Runs the speed-cap throttle off the main actor and times only the
+    /// throttle call itself, so host scheduling of the surrounding hops does
+    /// not contaminate the measurement.
+    private nonisolated static func throttleElapsed(
+        cap: RunSpeedCap,
+        pausePending: Bool
+    ) async -> TimeInterval {
+        let control = MachineRunControl()
+        control.setRunSpeedCap(cap)
+        if pausePending { control.requestPause() }
+        let started = Date()
+        SectorZeroWorkspace.throttle(
+            100_000,
+            startedAt: Date.timeIntervalSinceReferenceDate,
+            control: control
+        )
+        return Date().timeIntervalSince(started)
     }
 
     @Test("Workspace reset republishes a clean consistent snapshot")

@@ -1,22 +1,34 @@
 import Foundation
 import Observation
 
-private final class MachineRunControl: @unchecked Sendable {
+/// The run loop's shared state between the main actor and the machine's
+/// execution queue. It is exposed (rather than private) so tests that must
+/// measure machine-side run behavior can observe it without a main-actor
+/// presentation hop.
+final class MachineRunControl: @unchecked Sendable {
     private let lock = NSLock()
     nonisolated(unsafe) private var pauseRequested = false
     nonisolated(unsafe) private var runSpeedCyclesPerSecond: Double?
     nonisolated(unsafe) private var presentationFPS = 60
     nonisolated(unsafe) private var lastPublicationTime: TimeInterval = 0
+    nonisolated(unsafe) private var terminalStopContinuation: CheckedContinuation<MachineRunStopReason?, Never>?
+    nonisolated(unsafe) private var deliveredTerminalStop: MachineRunStopReason?
 
     nonisolated func begin() {
         lock.withLock {
             pauseRequested = false
             lastPublicationTime = 0
+            terminalStopContinuation = nil
+            deliveredTerminalStop = nil
         }
     }
 
     nonisolated func setRunSpeedCap(_ cap: RunSpeedCap) {
         lock.withLock { runSpeedCyclesPerSecond = cap.cyclesPerSecond }
+    }
+
+    nonisolated func turboFloppyDMAEnabled() -> Bool {
+        lock.withLock { runSpeedCyclesPerSecond == nil }
     }
 
     nonisolated func setPresentationFPS(_ fps: Int) {
@@ -43,6 +55,39 @@ private final class MachineRunControl: @unchecked Sendable {
             guard time - lastPublicationTime >= interval else { return false }
             lastPublicationTime = time
             return true
+        }
+    }
+
+    /// Records a completed run's terminal stop reason. An observer already
+    /// waiting is resumed immediately on the execution queue; otherwise the
+    /// reason is retained until an observer arrives.
+    nonisolated func deliverTerminalStop(_ reason: MachineRunStopReason) {
+        lock.withLock {
+            if let continuation = terminalStopContinuation {
+                terminalStopContinuation = nil
+                continuation.resume(returning: reason)
+            } else {
+                deliveredTerminalStop = reason
+            }
+        }
+    }
+
+    /// Awaits a run's terminal stop reason. Delivery is resolved on the
+    /// machine's execution queue, not the main actor, so observed latency
+    /// reflects machine-side stop behavior. Returns nil if two observers race
+    /// for the same run.
+    nonisolated func terminalStopReason() async -> MachineRunStopReason? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<MachineRunStopReason?, Never>) in
+            lock.withLock {
+                if let delivered = deliveredTerminalStop {
+                    deliveredTerminalStop = nil
+                    continuation.resume(returning: delivered)
+                } else if terminalStopContinuation != nil {
+                    continuation.resume(returning: nil)
+                } else {
+                    terminalStopContinuation = continuation
+                }
+            }
         }
     }
 }
@@ -154,8 +199,10 @@ final class SectorZeroWorkspace {
     private let displayRefreshRateKey = "SectorZero.DisplayRefreshRate"
     private let maximumRecentProjects = 8
     private let userDefaults: UserDefaults
+    private let libraryFolderAccess: LibraryFolderAccess
 
     var currentProject: SectorZeroProject?
+    var libraryFolderURL: URL? { libraryFolderAccess.url }
     var recentProjects: [RecentProject]
     var errorMessage: String?
     private(set) var pressedScanCodes: Set<UInt8> = []
@@ -177,7 +224,9 @@ final class SectorZeroWorkspace {
             userDefaults.set(displayRefreshRate.rawValue, forKey: displayRefreshRateKey)
         }
     }
-    private let runControl = MachineRunControl()
+    /// Exposed so tests can observe machine-side run events (such as terminal
+    /// stop delivery) without a main-actor presentation hop.
+    let runControl = MachineRunControl()
     private let executionQueue = DispatchQueue(label: "xyz.andypants.Sector-Zero.machine", qos: .userInitiated)
     private var presentationHandoff = RunPresentationHandoff()
     private let sliceInstructionLimit = 2_048
@@ -187,6 +236,7 @@ final class SectorZeroWorkspace {
         let machine = Machine()
         self.machine = machine
         self.userDefaults = userDefaults
+        self.libraryFolderAccess = LibraryFolderAccess(userDefaults: userDefaults)
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
         self.displayRefreshRate = Self.loadDisplayRefreshRate(key: displayRefreshRateKey, from: userDefaults)
@@ -198,12 +248,25 @@ final class SectorZeroWorkspace {
     init(machine: Machine, userDefaults: UserDefaults = .standard) {
         self.machine = machine
         self.userDefaults = userDefaults
+        self.libraryFolderAccess = LibraryFolderAccess(userDefaults: userDefaults)
         self.recentProjects = Self.loadRecentProjects(key: recentProjectsKey, from: userDefaults)
         self.runSpeedCap = Self.loadRunSpeedCap(key: runSpeedCapKey, from: userDefaults)
         self.displayRefreshRate = Self.loadDisplayRefreshRate(key: displayRefreshRateKey, from: userDefaults)
         self.machineSnapshot = machine.snapshot()
         self.runControl.setRunSpeedCap(runSpeedCap)
         self.runControl.setPresentationFPS(displayRefreshRate.rawValue)
+    }
+
+    /// Stores a sandbox bookmark for the folder that owns machine packages.
+    /// Its scope remains active so later media imports can update a package.
+    @discardableResult
+    func setLibraryFolder(_ url: URL) -> Bool {
+        guard libraryFolderAccess.choose(url) else {
+            errorMessage = "Sector Zero could not retain permission for this folder. Choose it again and approve access."
+            return false
+        }
+        errorMessage = nil
+        return true
     }
 
     /// Advances the emulated machine by one instruction step and republishes the
@@ -311,6 +374,7 @@ final class SectorZeroWorkspace {
             var presentationSequence = 0
             while true {
                 guard self != nil else { return }
+                machine.turboFloppyDMAEnabled = control.turboFloppyDMAEnabled()
                 let sliceStart = Date.timeIntervalSinceReferenceDate
                 let result = machine.runSlice(
                     maxInstructions: sliceLimit,
@@ -335,6 +399,7 @@ final class SectorZeroWorkspace {
                 default:
                     presentationSequence += 1
                     let sequence = presentationSequence
+                    control.deliverTerminalStop(result.stopReason)
                     Task { @MainActor [weak self] in
                         self?.publish(result, for: runID, sequence: sequence)
                     }
@@ -344,7 +409,11 @@ final class SectorZeroWorkspace {
         }
     }
 
-    private nonisolated static func throttle(
+    /// Paces a completed slice to the configured run speed, sleeping in
+    /// bounded intervals so a pending pause is always observed within one
+    /// interval. Exposed (rather than private) so tests can exercise the
+    /// poll/pause behavior directly, off the main actor.
+    nonisolated static func throttle(
         _ elapsedClocks: UInt64,
         startedAt sliceStart: TimeInterval,
         control: MachineRunControl
@@ -376,6 +445,7 @@ final class SectorZeroWorkspace {
     @discardableResult
     func runBounded(maxInstructions: Int) -> MachineRunSlice? {
         guard !isRunning, maxInstructions >= 0 else { return nil }
+        machine.turboFloppyDMAEnabled = runSpeedCap == .unlimited
         let result = machine.runSlice(
             maxInstructions: maxInstructions,
             breakpoints: breakpoints,
@@ -589,6 +659,61 @@ final class SectorZeroWorkspace {
         }
     }
 
+    /// Creates a DOS-formatted 1.44 MB floppy directly in the machine's
+    /// private media library. It is intentionally left unmounted so it can be
+    /// prepared in the library before being inserted into either drive.
+    @discardableResult
+    func createBlankFloppy(named name: String) -> URL? {
+        guard !isRunning, let project = currentProject else { return nil }
+        do {
+            let fileName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Floppy.img" : name
+            let url = try SectorZeroProjectStore.storeDiskImage(
+                FAT12Floppy.blankImage(), named: fileName, into: project
+            )
+            errorMessage = nil
+            return url
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func floppyFiles(at imageURL: URL) -> [FAT12Floppy.Entry] {
+        do { return try FAT12Floppy.entries(in: Data(contentsOf: imageURL)) }
+        catch { errorMessage = error.localizedDescription; return [] }
+    }
+
+    @discardableResult
+    func addFiles(_ files: [URL], toFloppy imageURL: URL) -> Bool {
+        guard !isRunning else { return false }
+        do {
+            let updatedImage = try FAT12Floppy.adding(files: files, to: Data(contentsOf: imageURL))
+            try updatedImage.write(to: imageURL, options: .atomic)
+            reloadMountedMedia(at: imageURL)
+            errorMessage = nil
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    @discardableResult
+    func exportFloppyFile(_ entry: FAT12Floppy.Entry, from imageURL: URL, to destinationURL: URL) -> Bool {
+        do {
+            try FAT12Floppy.contents(of: entry, in: Data(contentsOf: imageURL)).write(to: destinationURL, options: .atomic)
+            errorMessage = nil
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    private func reloadMountedMedia(at imageURL: URL) {
+        guard let project = currentProject else { return }
+        let url = imageURL.standardizedFileURL
+        let image = try? Data(contentsOf: imageURL)
+        guard let image else { return }
+        if project.configuredDiskImageURL?.standardizedFileURL == url { try? machine.mountFloppyDisk(image, drive: 0, fileURL: imageURL) }
+        if project.configuredFloppyBURL?.standardizedFileURL == url { try? machine.mountFloppyDisk(image, drive: 1, fileURL: imageURL) }
+        apply(machine.snapshot())
+    }
+
     /// Clears the mounted-image selection without deleting the package copy.
     @discardableResult
     func ejectDiskImage() -> Bool {
@@ -698,6 +823,20 @@ final class SectorZeroWorkspace {
         }
     }
 
+    /// The media library intentionally excludes hard-disk images, which share
+    /// the package's disk folder but are not valid floppy media.
+    func storedFloppyImages() -> [URL] {
+        storedDiskImages().filter { url in
+            guard let data = try? Data(contentsOf: url) else { return false }
+            return (try? FloppyDiskGeometry.detect(byteCount: data.count)) != nil
+        }
+    }
+
+    func floppySupportsFileTransfer(at imageURL: URL) -> Bool {
+        guard let image = try? Data(contentsOf: imageURL) else { return false }
+        return FAT12Floppy.supportsFileTransfer(image)
+    }
+
     @discardableResult
     func removeStoredDiskImage(at imageURL: URL) -> Bool {
         guard !isRunning, let project = currentProject else { return false }
@@ -765,11 +904,23 @@ final class SectorZeroWorkspace {
     }
 
     @discardableResult
-    func createProject(named projectName: String, in destinationFolderURL: URL) -> Bool {
+    func createProject(
+        named projectName: String,
+        in destinationFolderURL: URL,
+        floppyAURL: URL? = nil,
+        floppyBURL: URL? = nil,
+        hardDiskURL: URL? = nil,
+        createBlankHardDisk: Bool = false
+    ) -> Bool {
         do {
             let project = try SectorZeroProjectStore.createProject(named: projectName, in: destinationFolderURL)
             guard open(project) else { return false }
-            return installBuiltInFirmware()
+            guard installBuiltInFirmware() else { return false }
+            if let floppyAURL, !configureFloppyDisk(from: floppyAURL, drive: 0) { return false }
+            if let floppyBURL, !configureFloppyDisk(from: floppyBURL, drive: 1) { return false }
+            if let hardDiskURL, !configureHardDisk(from: hardDiskURL) { return false }
+            if createBlankHardDisk, !self.createBlankHardDisk() { return false }
+            return true
         } catch {
             errorMessage = error.localizedDescription
             return false
